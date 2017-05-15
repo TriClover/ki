@@ -1,0 +1,82 @@
+[db]
+title[]    = main
+host[]     = localhost
+user[]     = web
+password[] = lgbjeo54v4bie0hn0g53gh49hg4gojsbgd
+dbname[]   = site1
+
+;for multiple DBs just pass the title into the db() function to get each one
+;or call with no args to get the first one (the framework will do just that)
+;title[]    = extra
+;host[]     = localhost
+;user[]     = web
+;password[] = lgbjeo54v4bie0hn0g53gh49hg4gojsbgd
+;dbname[]   = forum
+
+[log]
+;destination - file:filename, user (browser), mail:address, table:dbtitle.tablename, syslog, php (follows php.ini), sapi (apache)
+;format      - plain, json, html
+;threshold   - minimum ordered level that will be logged. Can be number or NONE, SYSTEMIC, FATAL, ERROR, WARN, INFO, DEBUG, TRACE, ALL
+;namedlevels - comma-separated custom named log levels captured by this logger
+;log tables must have the fields in ki/schema/example_logTable.sql
+
+destination[] = sapi
+format[]      = plain
+threshold[]   = ERROR
+namedlevels[] = 
+
+[general]
+sitename = site1
+timezone = America/Detroit
+
+;File path where you configured the composer component installer to put components
+;If blank, the default is a "components" folder in DOCUMENT_ROOT, which is where they will be if you didn't specify the location to Composer either, and ran Composer in DOCUMENT_ROOT.
+;Relative paths are relative to DOCUMENT_ROOT, but you can also use an absolute path.
+componentsFilePath = static/components
+
+;URL to get to the components folder. You can probably leave this blank unless you put them on a separate vhost.
+;This must be either blank, an absolute path (eg. "/components") or a full URL (eg. "http://static.example.com/")
+;If blank, defaults as follows:
+;If componentsFilePath is also blank, use "/components"
+;If componentsFilePath is relative, use "/" followed by the componentsFilePath
+;If componentsFilePath is absolute and starts with the DOCUMENT_ROOT, use componentsFilePath minus the DOCUMENT_ROOT
+;If componentsFilePath is absolute and doesn't start with the DOCUMENT_ROOT, fall back to "/components"
+componentsUrl =
+
+;if environment is anything other than blank
+;it will show the non-production environment indicators
+environment = local
+
+[mail]
+;Values: 0/1 -- enable/disable actual sending. Either way, any specified logging will still work.
+send = 0
+;log the fact that a mail was sent (with To/Subject) with standard loggers
+loglevel = INFO
+;save the full contents of all mails sent to the given file
+archivefile =
+;If non-blank, the To address must match this regex or mail will not be sent
+regexRecipientWhitelist =
+
+[security]
+enable_root = 0
+root_password = gjf348n340fj359h84g34f0h38409fj
+root_ip =
+
+sessionTimeout_idle_minutes   = 
+sessionTimeout_absolute_hours = 
+
+;Max failed password attempts for one account from anywhere before lockout.
+;Attempt counter resets on successful login or after the Window
+maxPasswordAttempts           = 10
+passwordAttemptWindow_minutes = 15
+lockout_minutes               = 30
+
+;Max number of accounts one IP can fail to login to before the IP is blocked.
+;Attempt counter resets on successful login or after the Window
+maxAccountAttempts           = 5
+accountAttemptWindow_minutes = 60
+ipBlock_minutes              = 600
+
+;Max lifetime of an unused nonce (used for email verification and csrf)
+;Nonce attempts count as password attempts and so are subject to the above lockout measures
+nonceExpiry_hours = 24

@@ -1,0 +1,29 @@
+{
+	"name": "mls/ki",
+	"type": "library",
+	"description": "ki framework for PHP: The non-intrusive framework",
+	"require": {
+		"phpmailer/phpmailer": ">=6.0.0rc5",
+		"robloach/component-installer": "*",
+		"components/jquery": "*",
+		"components/jqueryui": ">=1.12"
+		"php": ">=7.0.0"
+	},
+	"extra": {
+		"component": {
+			"scripts": [
+				"setup/static/ki.js",
+				"setup/static/webshim/polyfiller.js"
+			],
+			"styles": [
+				"setup/static/ki.css"
+			],
+			"files": [
+				"setup/static/webshim/shims/*",
+				"setup/static/webshim/shims/*/*",
+				"setup/static/webshim/shims/*/*/*"
+			],
+			"name": "ki"
+		}
+	}
+}
