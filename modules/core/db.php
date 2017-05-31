@@ -22,6 +22,68 @@ function db($title = NULL, $connection = NULL)
 	$all[$title] = $connection;
 }
 
+/**
+* Execute a query using a prepared statement with the given args.
+* $purpose is used in log messages on error
+* returns:
+*	(for SELECT) the entire result set as an array of associative arrays
+*	(for non-SELECT) the nubmer of affected rows
+*	or FALSE on failure
+*/
+function query(\mysqli $db, string $query, array $args, string $purpose)
+{
+	//prepare query
+	$stmt = $db->prepare($query);
+	if($stmt === false)
+	{
+		Log::error('Query preparation failed - ' . $purpose);
+		return false;
+	}
+	
+	//bind params
+	if(!empty($args))
+	{
+		if(!$stmt->bind_param(str_repeat('s',count($args)), ...$args))
+		{
+			Log::error('Parameter binding failed - ' . $purpose . ': ' . $stmt->error);
+			$stmt->close();
+			return false;
+		}
+	}
+	
+	//execute
+	if(!$stmt->execute())
+	{
+		Log::error('Prepared statement execution failed - ' . $purpose . ': ' . $stmt->error);
+		$stmt->close();
+		return false;
+	}
+	
+	//attempt to get SELECT result
+	$res = $stmt->get_result();
+	
+	//for non-SELECT, return number of affected rows
+	if($res === false && $stmt->errno === 0)
+	{
+		$affected = $stmt->affected_rows;
+		$stmt->close();
+		return $affected;
+	}
+	
+	//handle errors in getting SELECT result
+	if($res === false)
+	{
+		Log::error('Getting result set handle for prepared statement failed - ' . $purpose . ': ' . $stmt->error);
+		$stmt->close();
+		return false;
+	}
+	
+	//fetch selected data
+	$data = $res->fetch_all(MYSQLI_ASSOC);
+	$stmt->close();
+	return $data;
+}
+
 namespace ki\database;
 
 /**

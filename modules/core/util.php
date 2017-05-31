@@ -100,12 +100,12 @@ function getUrl()
 
 function startsWith($haystack, $needle)
 {
-	return $needle == '' || strpos($haystack, $needle) === 0;
+	return $needle == '' || mb_strpos($haystack, $needle) === 0;
 }
 
 function endsWith($haystack, $needle)
 {
-	return (string)$needle === substr($haystack, -strlen($needle));
+	return (string)$needle === mb_substr($haystack, -mb_strlen($needle));
 }
 
 ?>

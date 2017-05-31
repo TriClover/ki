@@ -57,14 +57,24 @@ archivefile =
 ;If non-blank, the To address must match this regex or mail will not be sent
 regexRecipientWhitelist =
 
-[security]
+[root]
 enable_root = 0
 root_password = gjf348n340fj359h84g34f0h38409fj
 root_ip =
 
-sessionTimeout_idle_minutes   = 
-sessionTimeout_absolute_hours = 
+[sessions]
+;When user clicks "remember me" while logging in
+remembered_timeout_idle_minutes   = 20160
+remembered_timeout_absolute_hours = 4320
 
+;When user doesn't click "remember me" on login
+temp_timeout_idle_minutes   = 30
+temp_timeout_absolute_hours = 12
+
+;How often to cycle IDs
+reissue_minutes        = 60
+
+[limits]
 ;Max failed password attempts for one account from anywhere before lockout.
 ;Attempt counter resets on successful login or after the Window
 maxPasswordAttempts           = 10

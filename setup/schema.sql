@@ -2,7 +2,7 @@ CREATE TABLE `ki_users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `username` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL,
   `email` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `email_verified` tinyint(4) NOT NULL DEFAULT '0',
+  `email_verified` tinyint(1) NOT NULL DEFAULT '0',
   `password_hash` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
   `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `lockout_until` datetime DEFAULT NULL,
@@ -14,7 +14,8 @@ CREATE TABLE `ki_users` (
 
 CREATE TABLE `ki_sessions` (
   `id_hash` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `user` int(11) NOT NULL,
+  `user` int(11) DEFAULT NULL,
+  `ip` varbinary(16) NOT NULL,
   `fingerprint` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
   `established` datetime NOT NULL,
   `last_active` datetime DEFAULT NULL,
@@ -23,6 +24,31 @@ CREATE TABLE `ki_sessions` (
   PRIMARY KEY (`id_hash`),
   KEY `fk_sessions_user_users_id_idx` (`user`),
   CONSTRAINT `fk_sessions_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_failedLogins` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `inputUsername` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ip` varbinary(16) NOT NULL,
+  `when` datetime NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_groups` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(63) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name_UNIQUE` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_groupsOfUser` (
+  `user` int(11) NOT NULL,
+  `group` int(11) NOT NULL,
+  UNIQUE KEY `groupsOfUser_uc` (`user`,`group`),
+  KEY `gou_group_groups_id_idx` (`group`),
+  CONSTRAINT `gou_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `gou_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_nonces` (
@@ -34,4 +60,21 @@ CREATE TABLE `ki_nonces` (
   PRIMARY KEY (`nonce_hash`),
   KEY `nonces_user_users_id_idx` (`user`),
   CONSTRAINT `nonces_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_permissions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(127) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name_UNIQUE` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_permissionsOfGroup` (
+  `group` int(11) NOT NULL,
+  `permission` int(11) NOT NULL,
+  UNIQUE KEY `permissionsOfGroup_uc` (`group`,`permission`),
+  KEY `pog_perm_perms_id_idx` (`permission`),
+  CONSTRAINT `pog_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `pog_perm_perms_id` FOREIGN KEY (`permission`) REFERENCES `ki_permissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
