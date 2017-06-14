@@ -8,7 +8,8 @@ foreach(glob(__DIR__ . "/modules/*/*.php") as $filename)
 
 function init()
 {
-	database\connect_all();
+	header(httpHeaders());
 	date_default_timezone_set(config()['general']['timezone']);
+	database\connect_all();
 }
 ?>

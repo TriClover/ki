@@ -498,18 +498,13 @@ HTML;
 	{
 		$out = array();
 
-		//setup related
-		if(!is_array($this->fields[$col]->constraints))
-		{
-			$this->fields[$col]->constraints = array();
-			\ki\Log::warn('DataTable ' . $this->title . ' had invalid constraints for field: ' . $col);
-		}
-		$out = $this->fields[$col]->constraints;
-
 		//schema related
-		$type_paren_loc = strpos($this->fields[$col]->dataType,'(');
+		$colType_without_length = $this->fields[$col]->dataType;
+		$type_paren_loc = mb_strpos($this->fields[$col]->dataType,'(');
 		if($type_paren_loc !== false)
-		$colType_without_length = substr($this->fields[$col]->dataType,0,$type_paren_loc);
+		{
+			$colType_without_length = mb_substr($this->fields[$col]->dataType,0,$type_paren_loc);
+		}
 		
 		$htmlType = $this->formType($this->fields[$col]->dataType);
 		$out['type'] = $htmlType;
@@ -536,6 +531,14 @@ HTML;
 		{
 			$out['min'] = 0;
 		}
+
+		//setup related
+		if(!is_array($this->fields[$col]->constraints))
+		{
+			$this->fields[$col]->constraints = array();
+			\ki\Log::warn('DataTable ' . $this->title . ' had invalid constraints for field: ' . $col);
+		}
+		$out = array_merge($out,$this->fields[$col]->constraints);
 		
 		return $out;
 	}
@@ -756,7 +759,8 @@ HTML;
 			
 			if(isset($this->eventCallbacks->beforeDelete))
 			{
-				$cbRes = $this->eventCallbacks->beforeDelete($pkNamed);
+				$cbFunc = $this->eventCallbacks->beforeDelete;
+				$cbRes = $cbFunc($pkNamed);
 				if($cbRes !== true)
 				{
 					$this->outputMessage[] = $cbRes;
@@ -777,7 +781,8 @@ HTML;
 					$this->outputMessage[] = 'Successfully ' . (($this->allow_delete === true) ? 'deleted' : 'disabled') . ' row ' . htmlspecialchars(implode(',',$pk));
 					if(isset($this->eventCallbacks->onDelete))
 					{
-						$this->eventCallbacks->onDelete($pkNamed);
+						$cbFunc = $this->eventCallbacks->onDelete;
+						$cbFunc($pkNamed);
 					}
 				}
 			}
@@ -790,6 +795,18 @@ HTML;
 			$pk = json_decode($pk);
 			$query = 'UPDATE `' . $this->table . '` SET ';
 			$setVals = array();
+			
+			if(isset($this->eventCallbacks->beforeEdit))
+			{
+				$cbFunc = $this->eventCallbacks->beforeEdit;
+				$cbRes = $cbFunc($vals);
+				if($cbRes !== true)
+				{
+					$this->outputMessage[] = $cbRes;
+					continue;
+				}
+			}
+			
 			foreach($vals as $col => $value) //for each field in the row
 			{
 				\ki\Log::trace('Checking field ' . $col);
@@ -821,15 +838,7 @@ HTML;
 				}
 				$setVals[] = '`' . $db->real_escape_string($col) . '`=' . $value;
 			}
-			if(isset($this->eventCallbacks->beforeEdit))
-			{
-				$cbRes = $this->eventCallbacks->beforeEdit($vals);
-				if($cbRes !== true)
-				{
-					$this->outputMessage[] = $cbRes;
-					continue;
-				}
-			}
+
 			
 			$query .= implode(',', $setVals) . ' WHERE ';
 			$pkNamed = array();
@@ -861,7 +870,8 @@ HTML;
 					$this->outputMessage[] = 'Successfully updated row ' . htmlspecialchars(implode(',',$pk));
 					if(isset($this->eventCallbacks->onEdit))
 					{
-						$this->eventCallbacks->onEdit($pkNamed);
+						$cbFunc = $this->eventCallbacks->onEdit;
+						$cbFunc($pkNamed);
 					}
 				}
 			}
@@ -884,6 +894,16 @@ HTML;
 			}
 			//validate
 			$constraintsPass = true;
+			if(isset($this->eventCallbacks->beforeAdd))
+			{
+				$cbFunc = $this->eventCallbacks->beforeAdd;
+				$cbRes = $cbFunc($newRow);
+				if($cbRes !== true)
+				{
+					$constraintsPass = false;
+					$this->outputMessage[] = $cbRes;
+				}
+			}
 			foreach($newRow as $col => $value)
 			{
 				$alias = $this->fields[$col]->alias;
@@ -898,15 +918,7 @@ HTML;
 					}
 				}
 			}
-			if(isset($this->eventCallbacks->beforeAdd))
-			{
-				$cbRes = $this->eventCallbacks->beforeAdd($newRow);
-				if($cbRes !== true)
-				{
-					$constraintsPass = false;
-					$this->outputMessage[] = $cbRes;
-				}
-			}
+
 			
 			//build query
 			if($constraintsPass)
@@ -949,7 +961,8 @@ HTML;
 					$this->outputMessage[] = $message;
 					if(isset($this->eventCallbacks->onAdd))
 					{
-						$this->eventCallbacks->onAdd($pk);
+						$cbFunc = $this->eventCallbacks->onAdd;
+						$cbFunc($pk);
 					}
 				}
 			}
@@ -1182,7 +1195,7 @@ class DataTableField
 /**
   (onAdd, onEdit, onDelete): Called on successful action.
     Callback will recieve a list of affected rows by PK.
-	PK is returned as an array mapping field name to value.
+	PK is passed as an array mapping field name to value.
   (beforeAdd, beforeEdit, beforeDelete): Called before action is tried.
     beforeAdd/beforeEdit recieve an array with all values of the proposed row,
 	beforeDelete recieves the PK.
@@ -1205,12 +1218,12 @@ class DataTableEventCallbacks
 		$beforeedit   = NULL,
 		$beforedelete = NULL)
 	{
-		$this->$add          = $add;
-		$this->$edit         = $edit;
-		$this->$delete       = $delete;
-		$this->$beforeadd    = $beforeadd;
-		$this->$beforeedit   = $beforeedit;
-		$this->$beforedelete = $beforedelete;
+		$this->onAdd        = $add;
+		$this->onEdit       = $edit;
+		$this->onDelete     = $delete;
+		$this->beforeAdd    = $beforeadd;
+		$this->beforeEdit   = $beforeedit;
+		$this->beforeDelete = $beforedelete;
 	}
 }
 

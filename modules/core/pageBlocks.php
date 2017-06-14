@@ -36,7 +36,7 @@ function pageFooter()
 	return "\n </body>\n</html>";
 }
 
-function htmlHeaders()
+function httpHeaders()
 {
 	return 'Content-Type: text/html; charset=UTF-8';
 }

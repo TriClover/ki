@@ -13,10 +13,10 @@ CREATE TABLE `ki_users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_sessions` (
-  `id_hash` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `id_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
   `user` int(11) DEFAULT NULL,
   `ip` varbinary(16) NOT NULL,
-  `fingerprint` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fingerprint` text COLLATE utf8mb4_unicode_ci NOT NULL,
   `established` datetime NOT NULL,
   `last_active` datetime DEFAULT NULL,
   `remember` tinyint(4) NOT NULL,

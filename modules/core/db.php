@@ -22,12 +22,16 @@ function db($title = NULL, $connection = NULL)
 	$all[$title] = $connection;
 }
 
+namespace ki\database;
+
+use \ki\Log;
+
 /**
 * Execute a query using a prepared statement with the given args.
 * $purpose is used in log messages on error
 * returns:
 *	(for SELECT) the entire result set as an array of associative arrays
-*	(for non-SELECT) the nubmer of affected rows
+*	(for non-SELECT) the number of affected rows
 *	or FALSE on failure
 */
 function query(\mysqli $db, string $query, array $args, string $purpose)
@@ -83,8 +87,6 @@ function query(\mysqli $db, string $query, array $args, string $purpose)
 	$stmt->close();
 	return $data;
 }
-
-namespace ki\database;
 
 /**
 * Create mysqli object with the given credentials

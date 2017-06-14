@@ -108,4 +108,16 @@ function endsWith($haystack, $needle)
 	return (string)$needle === mb_substr($haystack, -mb_strlen($needle));
 }
 
+/*
+* Cryptographically-secure random string with a specified length in characters
+* If using a given keyspace with multi-byte characters, the length in bytes can vary
+*/
+function random_str($length, $keyspace = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+{
+    $str = '';
+    $max = mb_strlen($keyspace) - 1;
+    for($i = 0; $i < $length; ++$i)
+		$str .= mb_substr($keyspace, random_int(0, $max), 1);
+    return $str;
+}
 ?>

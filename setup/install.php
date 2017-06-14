@@ -7,6 +7,16 @@ if($res === false)
 	exit;
 }
 
+echo('Detecting PHP version...<br/>');
+$requiredPHPVersion = '7.0.0';
+if(version_compare(PHP_VERSION, $requiredPHPVersion, '<'))
+{
+	echo('Error: Insufficient PHP version. Requires at least <tt>' . $requiredPHPVersion
+		. '</tt>. Found <tt>' . PHP_VERSION . '</tt>. Aborting.<br/>');
+	exit;
+}
+echo('PHP Version OK.<br/>');
+
 echo('Detecting available PHP extensions...<br/>');
 $extensions = array('json', 'mysqli', 'mbstring');
 $x_missing = array();
@@ -45,16 +55,35 @@ echo('Loading ki framework...<br/>');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/vendor/autoload.php');
 require_once('vendor/mls/ki/ki.php');
 ki\init();
+use function \ki\database\query;
 echo('Framework loaded.<br/>');
 echo('<br/>');
 
-echo('Checking database...<br/>');
+echo('Checking database:<br/>');
 $db = \ki\db();
 if($db === NULL)
 {
 	echo('Database connection not established. You may still need to create the database, or edit the config file to point to it. Aborting.');
 	exit;
 }
+echo('Connected to database.<br/>');
+echo('Checking database server version...<br/>');
+$resVersion = query($db, 'SELECT version() AS version', array(), 'checking DB version');
+if($resVersion === false)
+{
+	echo('Error: failed to determine DBMS version. Aborting');
+	exit;
+}
+echo('Version OK.<br/>');
+$dbVersion = $resVersion[0]['version'];
+$requiredDbVersion = '10.0.12';
+if(version_compare($dbVersion, $requiredDbVersion, '<'))
+{
+	echo('Error: Insufficient MariaDB version. Requires at least <tt>' . $requiredDbVersion
+		. '</tt>. Found <tt>' . $dbVersion . '</tt>. Aborting.<br/>');
+	exit;
+}
+
 $schema = file_get_contents('vendor/mls/ki/setup/schema.sql');
 if($schema === false)
 {
