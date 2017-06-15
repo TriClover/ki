@@ -9,6 +9,9 @@
 		"components/jqueryui": ">=1.12",
 		"php": ">=7.0.0"
 	},
+    "autoload": {
+        "files": [ "ki.php" ]
+    },
 	"extra": {
 		"component": {
 			"scripts": [

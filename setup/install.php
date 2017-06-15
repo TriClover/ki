@@ -53,7 +53,6 @@ echo('<br/>');
 
 echo('Loading ki framework...<br/>');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/vendor/autoload.php');
-require_once('vendor/mls/ki/ki.php');
 ki\init();
 use function \ki\database\query;
 echo('Framework loaded.<br/>');
