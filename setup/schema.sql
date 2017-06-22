@@ -1,37 +1,29 @@
-CREATE TABLE `ki_users` (
+CREATE TABLE `ki_IPs` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `username` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `email` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `email_verified` tinyint(1) NOT NULL DEFAULT '0',
-  `password_hash` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `enabled` tinyint(1) NOT NULL DEFAULT '1',
-  `lockout_until` datetime DEFAULT NULL,
-  `last_active` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `username_UNIQUE` (`username`),
-  UNIQUE KEY `email_UNIQUE` (`email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `ki_sessions` (
-  `id_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `user` int(11) DEFAULT NULL,
   `ip` varbinary(16) NOT NULL,
-  `fingerprint` text COLLATE utf8mb4_unicode_ci NOT NULL,
-  `established` datetime NOT NULL,
-  `last_active` datetime DEFAULT NULL,
-  `remember` tinyint(4) NOT NULL,
-  `last_id_reissue` datetime NOT NULL,
-  PRIMARY KEY (`id_hash`),
-  KEY `fk_sessions_user_users_id_idx` (`user`),
-  CONSTRAINT `fk_sessions_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  `block_until` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ips_ip_idx` (`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_failedLogins` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `inputUsername` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `ip` varbinary(16) NOT NULL,
+  `ip` int(11) NOT NULL,
   `when` datetime NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `failedlogins_ip_ips_id_idx` (`ip`),
+  CONSTRAINT `failedlogins_ip_ips_id` FOREIGN KEY (`ip`) REFERENCES `ki_IPs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_failedSessions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `inputSessionId` char(32) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ip` int(11) NOT NULL,
+  `when` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `failedsessions_ip_ips_id_idx` (`ip`),
+  CONSTRAINT `failedsessions_ip_ips_id` FOREIGN KEY (`ip`) REFERENCES `ki_IPs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_groups` (
@@ -42,17 +34,30 @@ CREATE TABLE `ki_groups` (
   UNIQUE KEY `name_UNIQUE` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `ki_users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email_verified` tinyint(1) NOT NULL DEFAULT '0',
+  `password_hash` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `last_active` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `username_UNIQUE` (`username`),
+  UNIQUE KEY `email_UNIQUE` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `ki_groupsOfUser` (
   `user` int(11) NOT NULL,
   `group` int(11) NOT NULL,
   UNIQUE KEY `groupsOfUser_uc` (`user`,`group`),
   KEY `gou_group_groups_id_idx` (`group`),
-  CONSTRAINT `gou_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `gou_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `gou_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `gou_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_nonces` (
-  `nonce_hash` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `nonce_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
   `user` int(11) NOT NULL,
   `session` char(60) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created` datetime NOT NULL,
@@ -77,4 +82,20 @@ CREATE TABLE `ki_permissionsOfGroup` (
   KEY `pog_perm_perms_id_idx` (`permission`),
   CONSTRAINT `pog_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `pog_perm_perms_id` FOREIGN KEY (`permission`) REFERENCES `ki_permissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_sessions` (
+  `id_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user` int(11) DEFAULT NULL,
+  `ip` int(11) NOT NULL,
+  `fingerprint` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `established` datetime NOT NULL,
+  `last_active` datetime DEFAULT NULL,
+  `remember` tinyint(4) NOT NULL,
+  `last_id_reissue` datetime NOT NULL,
+  PRIMARY KEY (`id_hash`),
+  KEY `fk_sessions_user_users_id_idx` (`user`),
+  KEY `fk_sessions_ip_ips_id_idx` (`ip`),
+  CONSTRAINT `fk_sessions_ip_ips_id` FOREIGN KEY (`ip`) REFERENCES `ki_IPs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_sessions_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

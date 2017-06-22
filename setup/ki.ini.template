@@ -75,11 +75,10 @@ temp_timeout_absolute_hours = 12
 reissue_minutes        = 60
 
 [limits]
-;Max failed password attempts for one account from anywhere before lockout.
-;Attempt counter resets on successful login or after the Window
+;Max failed password attempts within the Window for one account from anywhere before lockout.
+;Attempt log cleared on successful login
 maxPasswordAttempts           = 10
 passwordAttemptWindow_minutes = 15
-lockout_minutes               = 30
 
 ;Max number of accounts one IP can fail to login to before the IP is blocked.
 ;Attempt counter resets on successful login or after the Window

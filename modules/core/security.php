@@ -9,150 +9,270 @@ use \ki\widgets\DataTableEventCallbacks;
 /**
 * Checks session status and fills the user/session globals with the info that pages need
 * to check authorization and/or track the user.
-* If parameters are passed, process a user login attempt with them first.
-* Otherwise, see if they provided a valid ID for an existing session.
+* First, see if they provided a valid ID for an existing session.
+* If parameters are passed, process a user login attempt with them.
 * If the user ends up not logged in, give them a new anonymous session.
-* Also check session expiry and SID reissue threshold
+* Also check session expiry, SID reissue threshold, account lockout, etc.
 *
-* @param logout if true, ignore all other parameters and terminate any existing session before doing anything else.
-*
-* @return string on failed login attempt using username/password, true otherwise.
+* @param logout if true, terminate any existing session and give them a new anonymous session
+* @return string on failed login attempt using username/password, false on errors so serious even an anonymous session couldn't be attached, true otherwise.
 */
 function checkLogin($username=NULL, $password=NULL, bool $remember=true, bool $logout=false)
 {
 	$db = \ki\db();
 	$ip = $_SERVER['REMOTE_ADDR'];
 	$fingerprint = generateFingerprint();
-	$db->begin_transaction(MYSQLI_TRANS_START_READ_WRITE);
+	$pwWindowBegin = time() - (\ki\config()['limits']['passwordAttemptWindow_minutes']*60);
+	$pwMax = \ki\config()['limits']['maxPasswordAttempts'];
+	$accountsWindowBegin = time() - (\ki\config()['limits']['accountAttemptWindow_minutes']*60);
+	$accMax = \ki\config()['limits']['maxAccountAttempts'];
+	$tooManyLoginsMsg = 'Too many login attempts.';
+	
+	$db->begin_transaction();
 	$ret = true;
+	$cookieParams = NULL;
+	$loggedABadAttempt = false;
 	
-	if($logout) {$username=NULL; $password=NULL;}
-	
-	//process a login attempt
-	if($username !== NULL && $password !== NULL)
+	//Check current standing of requestor's IP
+	$ipData = query($db, 'SELECT `id`,INET6_NTOA(`ip`) AS ip, UNIX_TIMESTAMP(`block_until`) AS block_until FROM ki_IPs WHERE `ip`=INET6_ATON(?) LIMIT 1',
+		array($ip), 'checking IP status');
+	if($ipData === false) {$db->commit(); $db->autocommit(true); return false;}
+	if(empty($ipData)) //If IP is newly encountered, add it to the list
 	{
-		$userRow = query($db, 'SELECT * FROM `ki_users` WHERE `username`=? LIMIT 1',
-			array($username), 'checking login');
-		
-		if($userRow !== false)
+		$ipIns = query($db, 'INSERT INTO `ki_IPs` SET `ip`=INET6_ATON(?)', array($ip), 'recording new IP');
+		if($ipIns !== 1) {$db->commit(); $db->autocommit(true); return false;}
+		$ipData = array('id' => $db->insert_id, 'ip' => $ip, 'block_until' => NULL);
+	}else{
+		$ipData = $ipData[0];
+	}
+	$ipBlocked = $ipData['block_until'] !== NULL && $ipData['block_until'] > time();
+
+	//If a session ID was provided, check it
+	if(isset($_COOKIE['id']) && !empty($_COOKIE['id']))
+	{
+		if(!$ipBlocked) //skip trying to lookup the session if IP is blocked
 		{
-			if(empty($userRow) || !password_verify($password, $userRow[0]['password_hash']))
+			$sid = $_COOKIE['id'];
+			$sidHash = pHash($sid);
+			$session = query($db, 'SELECT `id_hash`,`user`,UNIX_TIMESTAMP(`established`) AS established,UNIX_TIMESTAMP(`last_active`) AS last_active,`remember`,UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? AND `ip`=? AND `fingerprint`=? LIMIT 1',
+				array($sidHash, $ipData['id'], $fingerprint), 'looking up session requested by user');
+			//echo(\ki\util\toString(array($sid, $sidHash, $ipData['id'], $fingerprint)));
+			if(is_array($session) && !empty($session)) //If SID is valid
 			{
-				//Bad credentials provided, log failed login
-				query($db, 'INSERT INTO `ki_failedLogins` SET `inputUsername`=?,`ip`=INET6_ATON(?),`when`=NOW()',
-					array($username, $ip), 'logging bad login');
-				$ret = 'Invalid credentials.';
-			}else{
-				//Correct credentials provided
-				$user = $userRow[0];
-				query($db, 'DELETE FROM `ki_failedLogins` WHERE `inputUsername`=?',
-					array($username), 'resetting failed login count for username');
-				User::$current = new User($user['id'], $user['username'], $user['email'], $user['email_verified'], $user['password_hash'], $user['enabled'], $user['lockout_until'], $user['last_active']);
-				$perms = query($db,
-					'SELECT `name` FROM `ki_permissions` WHERE `id` IN('
-					. 'SELECT `permission` FROM `ki_permissionsOfGroup` WHERE `group` IN('
-					. 'SELECT `group` FROM `ki_groupsOfUser` WHERE `user`=?))',
-					array(User::$current->id), 'getting permissions list');
-				if($perms !== false)
+				$session = $session[0];
+				//if idle/abs timeout reached
+				if(time() >= sessionExpiry($session['established'], $session['remember'], $session['last_active']))
 				{
-					foreach($perms as $row)
+					query($db, 'DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+						array($sidHash), 'cleaning up expired session');
+				}else{
+					if($session['user'] !== NULL)
 					{
-						User::$current->permissions[] = $row['name'];
+						query($db, 'UPDATE `ki_users` SET `last_active`=NOW() WHERE `id`=?',
+							array($session['user']), 'udpating user last active');
+						$user = query($db, 'SELECT `username`, `email`, `email_verified`, `password_hash`, `enabled`, UNIX_TIMESTAMP(`last_active`) AS last_active FROM `ki_users` WHERE `id`=? LIMIT 1',
+							array($session['user']), 'loading user for session');
+						if(is_array($user) && !empty($user))
+						{
+							$user = $user[0];
+							User::$current = new User($session['user'], $user['username'], $user['email'], $user['email_verified'], $user['password_hash'], $user['enabled'], $user['last_active']);
+						}
 					}
-				}
-			
-				//start a session
-				$sidPair = generateSessionId();
-				$sid = $sidPair[0];
-				$sid_hash = $sidPair[1];
-				$sessionResult = query($db, 'INSERT INTO `ki_sessions` SET `id_hash`=?,`user`=?,`ip`=INET6_ATON(?),`fingerprint`=?,`established`=NOW(),`last_active`=NOW(),`remember`=?,`last_id_reissue`=NOW()',
-					array($sid_hash, User::$current->id, $ip, $fingerprint, $remember),
-					'creating session');
-				if($sessionResult !== false)
-				{
-					$session = query($db, 'SELECT * FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-						array($sid_hash), 'getting generated info for session created in previous query');
-					if($session === false || empty($session))
+					if(User::$current !== NULL && !User::$current->enabled)
 					{
-						$ret = 'Error accessing new session';
+						User::$current = NULL;
+						query($db, 'DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+							array($sidHash), 'deleting session of disabled user');
 					}else{
-						$session = $session[0];
-						Session::$current = new Session($sid, $sid_hash, $ip, $fingerprint, $session['established'], $session['last_active'], $remember, $session['last_id_reissue']);
-						$expiresTimestamp = sessionExpiry(Session::$current->established, Session::$current->remember);
-						setcookie('id', $sid, $expiresTimestamp, '/', '', true, true);
+						$reissueSeconds = \ki\config()['sessions']['reissue_minutes']*60;
+						$reissueTime = $session['last_id_reissue'] + $reissueSeconds;
+						if($reissueTime <= time()) //if time for reissuing session id, do that while updating last active
+						{
+							$sidPair = generateSessionId();
+							$sid = $sidPair[0];
+							$sidHash = $sidPair[1];
+							query($db, 'UPDATE `ki_sessions` SET `id_hash`=?,`last_active`=NOW(),`last_id_reissue`=NOW() WHERE `id_hash`=? LIMIT 1',
+								array($sidHash, $session['id_hash']), 'reissuing session ID and updating session last active');
+							//todo: execute hooks for session id change
+						}else{
+							query($db, 'UPDATE `ki_sessions` SET `last_active`=NOW() WHERE `id_hash`=? LIMIT 1',
+								array($session['id_hash']), 'updating session last active');
+						}
+						$session = query($db, 'SELECT `id_hash`,`user`,UNIX_TIMESTAMP(`established`) AS established,UNIX_TIMESTAMP(`last_active`) AS last_active,`remember`,UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+							array($sidHash), 'reloading session data after updating it');
+						if($session === false)
+						{
+							User::$current = NULL;
+						}else{
+							$session = $session[0];
+							Session::$current = new Session($sid, $sidHash, $ip, $fingerprint, $session['established'], $session['last_active'], $session['remember'], $session['last_id_reissue']);
+							$cookieParams = array('id', $sid, sessionExpiry($session['established'], $session['remember'], $session['last_active']), '/', '', true, true);
+						}
 					}
 				}
-				query($db, 'UPDATE `ki_users` SET `last_active`=NOW() WHERE `id`=? LIMIT 1',
-					array(User::$current->id), 'updating user last_active');
+			}else{
+				//if the given sid was confirmed invalid (ie not returned as valid and there was no DB error)
+				if($session !== false)
+				{
+					query($db, 'INSERT INTO ki_failedSessions SET `inputSessionId`=?,`ip`=?,`when`=NOW()',
+						array($sid, $ipData['id']), 'logging invalid session attach attempt');
+					$loggedABadAttempt = true;
+				}
 			}
-		}else{
+		}
+	}
+	
+	//if user/pass provided for login attempt, and GIVEN user not already loaded via recognized session
+	if($username !== NULL && $password !== NULL && (User::$current === NULL || User::$current->username != $username))
+	{
+		if(User::$current !== NULL) //different user loaded
+		{
+			query($db, 'DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+				array(Session::$current->id_hash), 'terminating session being replaced');
+			Session::$current = NULL;
+			User::$current = NULL;
+		}
+		
+		$user = query($db, 'SELECT `id`, `email`, `email_verified`, `password_hash`, `enabled`, UNIX_TIMESTAMP(`last_active`) AS last_active FROM `ki_users` WHERE `username`=? LIMIT 1',
+			array($username), 'getting user info for login attempt');
+		$badLogins = query($db, 'SELECT COUNT(*) AS total FROM `ki_failedLogins` WHERE `inputUsername`=? AND `when`>FROM_UNIXTIME(?)',
+			array($username, $pwWindowBegin), 'checking total bad logins for account');
+		$lockedOut = false;
+		if($badLogins !== false && !empty($badLogins) && $badLogins[0]['total'] > $pwMax)
+		{
+			$lockedOut = true;
+		}
+
+		if($user === false)
+		{
 			$ret = 'Database error logging in.';
 		}
-	}
-	elseif(isset($_COOKIE['id']) && !empty($_COOKIE['id']))
-	{
-		//process attempt to attach to existing session
-		$sid = $_COOKIE['id'];
-		$sidHash = pHash($_COOKIE['id']);
-		$session = query($db, 'SELECT * FROM `ki_sessions` WHERE `id_hash`=? AND `ip`=INET6_ATON(?) AND `fingerprint`=? LIMIT 1',
-			array($sidHash, $ip, $fingerprint), 'looking up session requested by user');
-		if($session !== false && !empty($session))
+		elseif($ipBlocked || $lockedOut)
 		{
-			$session = $session[0];
-			//Real session detected
-			$tsLastActive = \DateTime::createFromFormat('Y-m-d H:i:s', $session['last_active'])->getTimestamp();
-			$tsLastReissue = \DateTime::createFromFormat('Y-m-d H:i:s', $session['last_id_reissue'])->getTimestamp();
-			
-			//if session expired, or logout was selected, terminate the session
-			if($logout || (time() > sessionExpiry($session['established'], $remember, $tsLastActive)))
+			$ret = $tooManyLoginsMsg;
+		}else{
+			if(!empty($user) && password_verify($password, $user[0]['password_hash']))
 			{
-				setcookie('id', '', time()-86400, '/', '', true, true);
-				query($db, 'DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1', array($sidHash), 'cleaning up expired session');
-			}else{
-				//check sid reissue time and update last active
-				$tsReissue = $tsLastReissue + (\ki\config()['sessions']['reissue_minutes']*60);
-				if($tsReissue < time())
+				$user = $user[0];
+				if(!$user['enabled'])
 				{
-					$sidPair = generateSessionId();
-					$sid = sidPair[0];
-					$sidHash = sidPair[1];
-					query($db, 'UPDATE `ki_sessions` SET `id_hash`=?,`last_active`=NOW(),`last_id_reissue`=NOW() WHERE `id_hash`=? LIMIT 1',
-						array($sidHash, $session['id_hash']), 'reissuing session ID');
+					$ret = 'Your account is currently disabled and can only be re-enabled by staff.';
 				}else{
-					query($db, 'UPDATE `ki_sessions` SET `last_active`=NOW() WHERE `id_hash`=? LIMIT 1',
-						array($session['id_hash']), 'updating last active');
-				}
-				$session = query($db, 'SELECT * FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-					array($sidHash), 'reloading session after updates');
-				if($session !== false && !empty($session))
-				{
-					$session = $session[0];
-					setcookie('id', $sid, sessionExpiry($session['established'], $session['remember']), '/', '', true, true);
-				
-					//load session/user data
-					Session::$current = new Session($sid, $sidHash, $ip, $fingerprint, $session['established'], $session['last_active'], $session['remember'], $session['last_id_reissue']);
 					query($db, 'UPDATE `ki_users` SET `last_active`=NOW() WHERE `id`=? LIMIT 1',
-						array($session['user']), 'updating user last_active');
-					$user = query($db, 'SELECT * FROM `ki_users` WHERE `id`=? LIMIT 1',
-						array($session['user']), 'getting user data for session');
-					if($user !== false && !empty($user))
+						array($user['id']), 'updating user last active');
+					$user = query($db, 'SELECT `id`, `email`, `email_verified`, `password_hash`, `enabled`, UNIX_TIMESTAMP(`last_active`) AS last_active FROM `ki_users` WHERE `username`=? LIMIT 1',
+						array($username), 'reloading user info afer updating it');
+					$user = $user[0];
+					query($db, 'DELETE FROM `ki_failedLogins` WHERE `inputUsername`=?',
+						array($username), 'resetting failed login count for username on successful login');
+					User::$current = new User($user['id'], $username, $user['email'], $user['email_verified'], $user['password_hash'], $user['enabled'], $user['last_active']);
+					if(Session::$current !== NULL)
 					{
-						$user = $user[0];
-						User::$current = new User($user['id'], $user['username'], $user['email'], $user['email_verified'], $user['password_hash'], $user['enabled'], $user['lockout_until'], $user['last_active']);
+						$sidPair = generateSessionId();
+						$sid = $sidPair[0];
+						$sidHash = $sidPair[1];
+						query($db, 'UPDATE `ki_sessions` SET `id_hash`=?,`user`=?,`last_active`=NOW(),`last_id_reissue`=NOW(),`remember`=? WHERE `id_hash`=? LIMIT 1',
+							array($sidHash, $user['id'], $remember, Session::$current->id_hash), 'reissuing session ID and updating session last active');
+						//todo: execute hooks for session id change
+						$session = query($db, 'SELECT `id_hash`,`user`,UNIX_TIMESTAMP(`established`) AS established,UNIX_TIMESTAMP(`last_active`) AS last_active,`remember`,UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+							array($sidHash), 'reloading session data after updating it');
+						$session = $session[0];
+						Session::$current = new Session($sid, $sidHash, $ip, $fingerprint, $session['established'], $session['last_active'], $session['remember'], $session['last_id_reissue']);
+						$cookieParams = array('id', $sid, sessionExpiry($session['established'], $session['remember'], $session['last_active']), '/', '', true, true);
 					}
 				}
+			}else{
+				$ret = 'Invalid credentials.';
+				query($db, 'INSERT INTO `ki_failedLogins` SET `inputUsername`=?,`ip`=?,`when`=NOW()',
+					array($username, $ipData['id']), 'logging bad login');
+				$loggedABadAttempt = true;
 			}
 		}
-		elseif($session !== false && empty($session))
+	}
+	
+	if($loggedABadAttempt)
+	{
+		$badLogins = query($db, 'SELECT COUNT(DISTINCT `inputUsername`) AS total FROM `ki_failedLogins` WHERE `ip`=? AND `when`>FROM_UNIXTIME(?)',
+			array($ipData['id'], $pwWindowBegin), 'checking total bad logins from IP');
+		$badSessions = query($db, 'SELECT COUNT(DISTINCT `inputSessionId`) AS total FROM `ki_failedSessions` WHERE `ip`=? AND `when`>FROM_UNIXTIME(?)',
+			array($ipData['id'], $accountsWindowBegin), 'checking distinct bad session IDs from IP');
+		$badAccounts = 0;
+		if($badLogins !== false) $badAccounts += $badLogins[0]['total'];
+		if($badSessions !== false) $badAccounts += $badSessions[0]['total'];
+		if($badAccounts > $accMax)
 		{
-			//Bad session connection attempt: count as bad login attempt
-			query($db, 'INSERT INTO `ki_failedLogins` SET `inputUsername`=?,`ip`=INET6_ATON(?),`when`=NOW()',
-				array($sid,$ip), 'logging bad session attach attempt');
+			$blockUntil = time() + (\ki\config()['limits']['ipBlock_minutes']*60);
+			query($db, 'UPDATE `ki_IPs` SET `block_until`=FROM_UNIXTIME(?) WHERE `id`=?',
+				array($blockUntil, $ipData['id']), 'blocking IP');
+			$ret = ($username !== NULL) ? $tooManyLoginsMsg : true;
+			$ipBlocked = true;
 		}
 	}
+	
+	if(($logout || $ipBlocked) && Session::$current !== NULL)
+	{
+		query($db, 'DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+			array(Session::$current->id_hash), 'logging out');
+		Session::$current = NULL;
+		User::$current = NULL;
+	}
+	
+	//If no session was attached, make a new one now
+	//If no user was loaded, make it an anonymous session
+	if(Session::$current === NULL && !$ipBlocked)
+	{
+		$sidPair = generateSessionId();
+		$sid = $sidPair[0];
+		$sidHash = $sidPair[1];
+		$user = (User::$current === NULL) ? NULL : User::$current->id;
+		$sessionRemember = ($user === NULL) ? false : $remember;
+		$newRes = query($db, 'INSERT INTO `ki_sessions` SET `id_hash`=?,`user`=?,`ip`=?,`fingerprint`=?,`established`=NOW(),`last_active`=NOW(),`remember`=?,`last_id_reissue`=NOW()',
+			array($sidHash, $user, $ipData['id'], $fingerprint, $sessionRemember), 'creating new session');
+		if($newRes !== 1)
+		{
+			$ret = false;
+		}else{
+			$session = query($db, 'SELECT UNIX_TIMESTAMP(`established`) AS established, UNIX_TIMESTAMP(`last_active`) AS last_active, `remember`, UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+				array($sidHash), 'Getting time info from new session');
+			if($session !== false && is_array($session) && !empty($session))
+			{
+				$session = $session[0];
+				Session::$current = new Session($sid, $sidHash, $ip, $fingerprint, $session['established'], $session['last_active'], $session['remember'], $session['last_id_reissue']);
+				$cookieParams = array('id', $sid, sessionExpiry($session['established'], $session['remember'], $session['last_active']), '/', '', true, true);
+			}
+		}
+	}
+	
+	if(User::$current !== NULL) //if logged in as a user, load their permissions
+	{
+		$perms = query($db,
+			'SELECT `name` FROM `ki_permissions` WHERE `id` IN('
+			. 'SELECT `permission` FROM `ki_permissionsOfGroup` WHERE `group` IN('
+			. 'SELECT `group` FROM `ki_groupsOfUser` WHERE `user`=?))',
+			array(User::$current->id), 'getting permissions list');
+		if($perms !== false)
+		{
+			foreach($perms as $row)
+			{
+				User::$current->permissions[] = $row['name'];
+			}
+		}
+	}
+	
+	if(Session::$current !== NULL && $cookieParams !== NULL)
+	{
+		setcookie(...$cookieParams);
+	}else{
+		/*If we completely failed to give them even an anonymous session then at least blank the cookie
+		to prevent any previous cookie from generating bad session attach attempts */
+		setcookie('id', '', time()-86400, '/', '', true, true);
+		if($ret === true) $ret = false;
+	}
+	
 	$db->commit(); $db->autocommit(true);
 	return $ret;
 }
+
 
 /**
 * Generates a new session ID; guaranteed to be unique
@@ -201,7 +321,7 @@ function pHash($input, $salt='dkljbhf3948go07hf7g578')
 * Calculates when a session will expire, assuming no more activity.
 * Takes the sooner of the idle timeout and absolute timeout.
 *
-* @param established DateTime string for beginning of session
+* @param established timestamp for beginning of session
 * @param remember whether the session has Remember enabled
 * @param last_active timstamp from which to calculate idle timeout. Leave NULL to use the current time; eg. when starting or refreshing a session. Specify a time to check whether an old session has expired or not without refreshing it.
 * @return timestamp for when the session should expire
@@ -209,7 +329,6 @@ function pHash($input, $salt='dkljbhf3948go07hf7g578')
 function sessionExpiry(string $established, bool $remember, int $last_active = NULL)
 {
 	if($last_active === NULL) $last_active = time();
-	$established = \DateTime::createFromFormat('Y-m-d H:i:s', $established)->getTimestamp();
 	$config = \ki\config()['sessions'];
 	$idle_seconds = $config['remembered_timeout_idle_minutes'] * 60;
 	$absolute_seconds = $config['remembered_timeout_absolute_hours'] * 60 * 60;
@@ -232,7 +351,6 @@ function dataTable_editUsers()
 	$fields[] = new DataTableField('email_verified', NULL, NULL, true, false, false);
 	$fields[] = new DataTableField('password_hash', NULL, NULL, true, false, true, array(), '\ki\security\reduceTextSize');
 	$fields[] = new DataTableField('enabled', NULL, NULL, true, true, true);
-	$fields[] = new DataTableField('lockout_until', NULL, NULL, true, true, true);
 	$fields[] = new DataTableField('last_active', NULL, NULL, true, false, NULL);
 	$events = new DataTableEventCallbacks(NULL, NULL, NULL, '\ki\security\userRow_hashPassword', NULL, NULL);
 	return new DataTable('users', 'ki_users', $fields, true, true, false, 3, false, false, false, false, $events, NULL);
@@ -259,12 +377,11 @@ class User
 	public $email_verified;
 	public $password_hash;
 	public $enabled;
-	public $lockout_until;
 	public $last_active;
 	
 	public $permissions = array();
 	
-	function __construct($id, $username, $email, $email_verified, $password_hash, $enabled, $lockout_until, $last_active)
+	function __construct($id, $username, $email, $email_verified, $password_hash, $enabled, $last_active)
 	{
 		$this->id             = $id;
 		$this->username       = $username;
@@ -272,7 +389,6 @@ class User
 		$this->email_verified = $email_verified;
 		$this->password_hash  = $password_hash;
 		$this->enabled        = $enabled;
-		$this->lockout_until  = $lockout_until;
 		$this->last_active    = $last_active;
 	}
 }
