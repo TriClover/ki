@@ -11,6 +11,8 @@ function pagesToShow($current, $last)
 	$pagesEachDirection = 2;
 	$out = array();
 	
+	if($last == 0) return $out;
+	
 	$startOfMiddleSection = $current-$pagesEachDirection;
 	$endOfMiddleSection = $current+$pagesEachDirection;
 	

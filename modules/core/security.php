@@ -344,27 +344,27 @@ function sessionExpiry(string $established, bool $remember, int $last_active = N
 
 function dataTable_editUsers()
 {
+	$userRow_hashPassword = function(&$row)
+	{
+		$row['password_hash'] = \password_hash($row['password_hash'], PASSWORD_BCRYPT);
+		return true;
+	};
+	
+	$reduceTextSize = function($text)
+	{
+		return '<span style="font-size:50%;">' . $text . '</span>';
+	};
+		
 	$fields = array();
 	$fields[] = new DataTableField('id', NULL, NULL, true, false, false);
 	$fields[] = new DataTableField('username', NULL, NULL, true, true, true);
 	$fields[] = new DataTableField('email', NULL, NULL, true, true, true, array('type' => 'email'));
 	$fields[] = new DataTableField('email_verified', NULL, NULL, true, false, false);
-	$fields[] = new DataTableField('password_hash', NULL, NULL, true, false, true, array(), '\ki\security\reduceTextSize');
+	$fields[] = new DataTableField('password_hash', NULL, NULL, true, false, true, array(), $reduceTextSize);
 	$fields[] = new DataTableField('enabled', NULL, NULL, true, true, true);
 	$fields[] = new DataTableField('last_active', NULL, NULL, true, false, NULL);
-	$events = new DataTableEventCallbacks(NULL, NULL, NULL, '\ki\security\userRow_hashPassword', NULL, NULL);
-	return new DataTable('users', 'ki_users', $fields, true, true, false, 3, false, false, false, false, $events, NULL);
-}
-
-function userRow_hashPassword(&$row)
-{
-	$row['password_hash'] = \password_hash($row['password_hash'], PASSWORD_BCRYPT);
-	return true;
-}
-
-function reduceTextSize($text)
-{
-	return '<span style="font-size:50%;">' . $text . '</span>';
+	$events = new DataTableEventCallbacks(NULL, NULL, NULL, $userRow_hashPassword, NULL, NULL);
+	return new DataTable('users', 'ki_users', $fields, true, true, false, 50, false, false, false, false, $events, NULL);
 }
 
 class User

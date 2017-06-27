@@ -123,10 +123,8 @@ class DataTable
 				//Exception: Never try to enable editing on PK fields
 				if($row['Key'] == 'PRI') $this->fields[$row['Field']]->edit = false;
 			}
-			//Only accept the default of allowing user value for add on auto_increment column if
-			//it was actually specified by the caller
-			if(mb_strpos($row['Extra'],'auto_increment') !== false
-				&& $this->fields[$row['Field']]->callerAdd !== true)
+			//Don't accept the default of allowing user value for add on auto_increment column
+			if(mb_strpos($row['Extra'],'auto_increment') !== false)
 			{
 				$this->fields[$row['Field']]->add = false;
 			}
@@ -292,7 +290,7 @@ class DataTable
 		$res->close();
 		
 		//calculate data
-		$pages = ceil(((double)$total) / $this->rows_per_page);
+		$pages = ($this->rows_per_page < 1) ? 0 : ceil(((double)$total) / $this->rows_per_page);
 		
 		//generate html
 		$out = '';
@@ -444,7 +442,7 @@ class DataTable
 		$out .= "\n" . '  </div>';
 		
 		//paging controls
-		$out .= "\n  " . $this->pager($pages);
+		if($pages > 1) $out .= "\n  " . $this->pager($pages);
 		$out .= '</div>';
 		
 		//javascript to enhance editing
@@ -722,7 +720,7 @@ HTML;
 				$col = mb_substr($key,mb_strlen($newPrefix));
 				if($this->fields[$col]->add !== true)
 				{
-					\ki\Log::warn('Tried to specify value for new row in field not editable in new rows');
+					\ki\Log::warn('(DataTable) Tried to specify value for new row in field not editable in new rows');
 					continue;
 				}
 				$newRow[$col] = $value;
@@ -884,7 +882,7 @@ HTML;
 			foreach($this->fields as $col => $fval)
 			{
 				$directive = $fval->add;
-				if(!array_key_exists($col, $newRow) || empty($newRow[$col]))
+				if(!array_key_exists($col, $newRow))// || empty($newRow[$col]))
 				{
 					if($directive !== true && $directive !== false)
 					{
@@ -1147,9 +1145,6 @@ class DataTableField
 	//Presentation
 	public $outputFilter = NULL; //Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
 	
-	//Store some of the caller's original arguments, in case the real value can get changed but we still care what was specified
-	public $callerAdd  = NULL;
-	
 	function __construct($name,
 	                     $table = NULL,
 						 $alias = NULL,
@@ -1159,8 +1154,6 @@ class DataTableField
 						 $constraints = array(),
 						 $outputFilter = NULL)
 	{
-		$this->callerAdd  = $add;
-		
 		$this->name = $name;
 		$this->table = $table;
 		if($alias === NULL)
@@ -1169,12 +1162,7 @@ class DataTableField
 			$this->alias = $alias;
 		$this->show = $show;
 		$this->edit = $edit;
-		if($add === NULL)
-		{
-			$this->add = true;
-		}else{
-			$this->add = $add;
-		}
+		$this->add = $add;
 		$this->constraints = ($constraints === NULL) ? array() : $constraints;
 		$this->outputFilter = $outputFilter;
 	}
