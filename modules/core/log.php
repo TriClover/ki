@@ -93,7 +93,7 @@ class Log
 					$mail->FromName = $site . ' Log Mailer';
 					$mail->addAddress($dest->address);
 					$mail->Subject = $site . ' Log [' . $levelName . ']';
-					mail($mail);
+					\ki\mail($mail);
 					break;
 					
 					case 'table':

@@ -296,19 +296,32 @@ class DataTable
 		$out = '';
 		
 		//feedback on previous submit
-		if(!empty($this->outputMessage)) $out .= '<ul><li>' . implode('</li><li>',$this->outputMessage) . '</li></ul>';
+		$this->outputMessage = array_filter($this->outputMessage);
+		if(!empty($this->outputMessage))
+		{
+			$out .= '<ul>';
+			foreach($this->outputMessage as $retmsg) $out .= '<li>' . $retmsg . '</li>';
+			$out .= '</ul>';
+		}
 		
 		//rows to display and/or edit
 		$pageInput = '<input type="hidden" name="' . $this->inPrefix . 'page' . '" value="' . $this->page . '"/>';
 		$out .= '<div style="text-align:center;display:inline-block;">';
-		$out .= "\n" . '  <div class="ki_table">' . "\n" . '   <div>';
-		//data column headers
-		foreach($this->fields as $field) $out .= "\n" . '    <div>' . $field->alias . '</div>';
-		//add/save/delete button column header
-		if($this->allow_edit || $this->allow_add || ($this->allow_delete !== false)) $out .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
-		//custom callback column header
-		if(!empty($this->buttonCallbacks)) $out .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
-		$out .= "\n" . '   </div>';
+		$out .= "\n" . '  <div class="ki_table">';
+		if($this->rows_per_page > 0) //for add-only forms with no output, skip showing headers. The field names are in the placeholders anyway.
+		{
+			$out .= "\n" . '   <div>';
+			//data column headers
+			foreach($this->fields as $field)
+			{
+				if($field->show) $out .= "\n" . '    <div>' . $field->alias . '</div>';
+			}
+			//add/save/delete button column header
+			if($this->allow_edit || $this->allow_add || ($this->allow_delete !== false)) $out .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
+			//custom callback column header
+			if(!empty($this->buttonCallbacks)) $out .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
+			$out .= "\n" . '   </div>';
+		}
 		$json_data = array();
 		foreach($data as $row)
 		{
@@ -322,6 +335,7 @@ class DataTable
 					\ki\Log::error('DataTable got unknown alias back from database: ' . $alias);
 					return '';
 				}
+				if(!$this->fields[$realCol]->show) continue;
 				$value = htmlspecialchars($value);
 				$dataRow .= "\n    " . '<div>';
 				$dataCell = '';
@@ -366,7 +380,8 @@ class DataTable
 					$buttonName = $this->inputId('0', $row, 'submit');
 					$dataRow .=  '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" value="💾" class="ki_button_save" title="Save"/>';
 				}
-				$dataRow .= '<span class="ki_noscript_spacer"> - </span>';
+				if($this->allow_edit || ($this->allow_delete !== false))
+					$dataRow .= '<span class="ki_noscript_spacer"> - </span>';
 				if($this->allow_delete !== false)
 				{
 					$buttonName = $this->inputId('0', $row, 'delete');
@@ -388,13 +403,13 @@ class DataTable
 				}
 				$dataRow .= "\n" . '    </div>';
 			}
-			$out .= "\n" . '   <form method="post">' . $dataRow . "\n" . '   </form>';
+			$out .= "\n" . '   <form method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">' . $dataRow . "\n" . '   </form>';
 		}
 		
 		//add new row
 		if($this->allow_add)
 		{
-			$out .= "\n   " . '<form method="post">';
+			$out .= "\n   " . '<form method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">';
 			foreach($this->fields as $col => $val)
 			{
 				if(!$val->show) continue;
@@ -423,6 +438,7 @@ class DataTable
 						if($val->defaultValue) $inputAttributes[] = 'checked="checked"';
 					}else{
 						$inputAttributes[] = 'value="' . $val->defaultValue . '"';
+						$inputAttributes[] = 'placeholder="' . $val->alias . '"';
 					}
 					$addingCell .= '<input ' . implode(' ', $inputAttributes) . '/>';
 				}else{
@@ -558,18 +574,20 @@ HTML;
 	
 	/**
 	* Handle HTTP params (GET, POST) and update the database if necessary
+	* @return boolean whether any items were successfully processed.
 	*/
 	function handleParams($post = NULL, $get = NULL)
 	{
 		\ki\Log::trace('Handling params for DataTable ' . $this->title);
 		$db = \ki\db();
+		$didSomething = false;
 		
 		//check preconditions
-		if(!$this->setupOK) return '';
+		if(!$this->setupOK) return false;
 		if($this->handledParams)
 		{
 			\ki\Log::error('Tried to handle params for the same DataTable twice in one page load');
-			return;
+			return false;
 		}
 		$this->handledParams = true;
 		if($this->printed)
@@ -586,7 +604,7 @@ HTML;
 		{
 			\ki\Log::trace('DataTable ' . $this->title . ' found GET and no POST');
 			$this->page = (int)$get[$this->inPrefix . 'page'];
-			return; //if GET was used, don't process POST
+			return false; //if GET was used, don't process POST
 		}
 		\ki\Log::trace('DataTable ' . $this->title . ' done checking for GET, continuing to POST');
 		if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
@@ -725,7 +743,6 @@ HTML;
 				}
 				$newRow[$col] = $value;
 			}
-
 		}
 		
 		//handle deletes
@@ -777,10 +794,12 @@ HTML;
 					$this->outputMessage[] = 'Could not find row ' . htmlspecialchars(implode(',',$pk));
 				}else{
 					$this->outputMessage[] = 'Successfully ' . (($this->allow_delete === true) ? 'deleted' : 'disabled') . ' row ' . htmlspecialchars(implode(',',$pk));
+					$didSomething = true;
 					if(isset($this->eventCallbacks->onDelete))
 					{
 						$cbFunc = $this->eventCallbacks->onDelete;
-						$cbFunc($pkNamed);
+						$msg_onDelete = $cbFunc($pkNamed);
+						if(!empty($msg_onDelete)) $this->outputMessage[] = $msg_onDelete;
 					}
 				}
 			}
@@ -793,18 +812,7 @@ HTML;
 			$pk = json_decode($pk);
 			$query = 'UPDATE `' . $this->table . '` SET ';
 			$setVals = array();
-			
-			if(isset($this->eventCallbacks->beforeEdit))
-			{
-				$cbFunc = $this->eventCallbacks->beforeEdit;
-				$cbRes = $cbFunc($vals);
-				if($cbRes !== true)
-				{
-					$this->outputMessage[] = $cbRes;
-					continue;
-				}
-			}
-			
+
 			foreach($vals as $col => $value) //for each field in the row
 			{
 				\ki\Log::trace('Checking field ' . $col);
@@ -836,6 +844,17 @@ HTML;
 				}
 				$setVals[] = '`' . $db->real_escape_string($col) . '`=' . $value;
 			}
+			
+			if(isset($this->eventCallbacks->beforeEdit))
+			{
+				$cbFunc = $this->eventCallbacks->beforeEdit;
+				$cbRes = $cbFunc($vals);
+				if($cbRes !== true)
+				{
+					$this->outputMessage[] = $cbRes;
+					continue;
+				}
+			}
 
 			
 			$query .= implode(',', $setVals) . ' WHERE ';
@@ -866,10 +885,12 @@ HTML;
 					$this->outputMessage[] = 'Could not find editable row for ' . htmlspecialchars(implode(',',$pk)) . ' or nothing was edited.';
 				}else{
 					$this->outputMessage[] = 'Successfully updated row ' . htmlspecialchars(implode(',',$pk));
+					$didSomething = true;
 					if(isset($this->eventCallbacks->onEdit))
 					{
 						$cbFunc = $this->eventCallbacks->onEdit;
-						$cbFunc($pkNamed);
+						$msg_onEdit = $cbFunc($pkNamed);
+						if(!empty($msg_onEdit)) $this->outputMessage[] = $msg_onEdit;
 					}
 				}
 			}
@@ -892,16 +913,6 @@ HTML;
 			}
 			//validate
 			$constraintsPass = true;
-			if(isset($this->eventCallbacks->beforeAdd))
-			{
-				$cbFunc = $this->eventCallbacks->beforeAdd;
-				$cbRes = $cbFunc($newRow);
-				if($cbRes !== true)
-				{
-					$constraintsPass = false;
-					$this->outputMessage[] = $cbRes;
-				}
-			}
 			foreach($newRow as $col => $value)
 			{
 				$alias = $this->fields[$col]->alias;
@@ -916,7 +927,16 @@ HTML;
 					}
 				}
 			}
-
+			if(isset($this->eventCallbacks->beforeAdd))
+			{
+				$cbFunc = $this->eventCallbacks->beforeAdd;
+				$cbRes = $cbFunc($newRow);
+				if($cbRes !== true)
+				{
+					$constraintsPass = false;
+					$this->outputMessage[] = $cbRes;
+				}
+			}
 			
 			//build query
 			if($constraintsPass)
@@ -956,15 +976,23 @@ HTML;
 						$message .= ' with number ' . $insert_id;
 						$pk[$this->autoCol] = $insert_id;
 					}
-					$this->outputMessage[] = $message;
+					$didSomething = true;
+					$addedToOutputMessage = false;
 					if(isset($this->eventCallbacks->onAdd))
 					{
 						$cbFunc = $this->eventCallbacks->onAdd;
-						$cbFunc($pk);
+						$msg_onAdd = $cbFunc($pk);
+						if(!empty($msg_onAdd))
+						{
+							$this->outputMessage[] = $msg_onAdd;
+							$addedToOutputMessage = true;
+						}
 					}
+					if(!$addedToOutputMessage) $this->outputMessage[] = $message;
 				}
 			}
 		}
+		return $didSomething;
 	}
 	
 	/**
@@ -1184,6 +1212,7 @@ class DataTableField
   (onAdd, onEdit, onDelete): Called on successful action.
     Callback will recieve a list of affected rows by PK.
 	PK is passed as an array mapping field name to value.
+	Return value if any is shown to the user.
   (beforeAdd, beforeEdit, beforeDelete): Called before action is tried.
     beforeAdd/beforeEdit recieve an array with all values of the proposed row,
 	beforeDelete recieves the PK.

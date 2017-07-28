@@ -2,9 +2,13 @@
 
 .ki_table{
 	display:table;
-	margin-bottom:2px;
 	border-collapse:separate;
 	border-spacing:1px 0;
+	margin-top:1px;
+}
+
+.ki_table form:last-child>div{
+	border-width:0;
 }
 
 .ki_table>div,.ki_table>form{

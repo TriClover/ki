@@ -39,6 +39,9 @@ function mail($mail, $silent = false)
 			$status = 'regexFail';
 		}
 	}
+	
+	//enforce some properties on all mails
+	$mail->CharSet = "UTF-8";
 
 	//insert environment indicator
 	$env = config()['general']['environment'];

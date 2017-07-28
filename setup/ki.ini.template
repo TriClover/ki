@@ -87,5 +87,10 @@ accountAttemptWindow_minutes = 60
 ipBlock_minutes              = 600
 
 ;Max lifetime of an unused nonce (used for email verification and csrf)
-;Nonce attempts count as password attempts and so are subject to the above lockout measures
+;Nonce attempts count as session attempts and so are subject to the above lockout measures
 nonceExpiry_hours = 24
+
+[policies]
+;Password complexity requirements. Regex must be in html5 pattern form.
+passwordRegex = (?=^.{8,}$)(?=.*\d)(?=.*\W)(?=.*[A-Z])(?=.*[a-z]).*$
+passwordRegexDescription = Must include uppercase, lowercase, digit, and special character. Minimum length 8

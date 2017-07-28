@@ -94,7 +94,7 @@ function getUrl()
 		$scheme = $_SERVER['REQUEST_SCHEME'] . '://';
 		$host   = $_SERVER['HTTP_HOST'];
 		//$port   = (($_SERVER['SERVER_PORT'] == 80 && !$ssl) || ($_SERVER['SERVER_PORT'] == 443 && $ssl)) ? '' : $_SERVER['SERVER_PORT'];
-		$req    = $_SERVER['REQUEST_URI'];
+		$req    = $_SERVER['SCRIPT_NAME'];
 		$url = $scheme.$host.$req;
 	}
 	return $url;
