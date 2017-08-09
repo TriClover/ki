@@ -22,9 +22,8 @@ function pageHeader($headContent = '')
   <script src="$base/ki/setup/static/webshim/polyfiller.js?ver=$mt_webshim_js"></script>
   <script>webshims.polyfill('forms forms-ext details geolocation');</script>
   <link rel="stylesheet" href="$base/ki/setup/static/ki.css?ver=$mt_ki_css"/>
-  <link rel="stylesheet" href="$base/ki/setup/static/ki.js?ver=$mt_ki_js"/>
+  <script src="$base/ki/setup/static/ki.js?ver=$mt_ki_js"></script>
   <title>$title</title>
-
 HTMLHEAD;
 	$out .= $headContent;
 	$out .= " </head>\n <body>";

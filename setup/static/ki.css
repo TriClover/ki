@@ -1,5 +1,18 @@
 @charset "UTF-8";
 
+/* General */
+
+body{
+	margin:0;
+}
+
+.button2text{
+	background:none;
+	border:none;
+	cursor:pointer;
+}
+
+/* DataTable */
 .ki_table{
 	display:table;
 	border-collapse:separate;
@@ -107,4 +120,63 @@
 	border:0;margin:0;padding:0;
 	display:inline-block;
 	vertical-align:bottom;
+}
+
+/* Tabber */
+.ki_tabber{
+	position:relative;
+	border:0;margin:0 2px 0 0;padding:0;
+}
+.ki_tabber>div{                                      /* Targets */
+	border:0;margin:0;padding:0;
+}
+.ki_tabber>div>a{                                    /* Unselected tabs */
+	display:inline-block;
+	position:relative;
+	z-index:0;
+	float:left;
+	height:16px;
+	border:black solid;
+	border-radius:5px 15px 0 0;
+	border-width:1px 1px 0 1px;
+	margin:0 -7px 0 2px;
+	padding:1px 15px 0 5px;
+	background-color:#DDD;
+	text-decoration:none;
+	color:#000;
+	font-family:Verdana,Arial,Helvetica,sans-serif;
+	font-weight:bold;
+	font-size:10px;
+}
+.ki_tabber>div:target>a{                             /* Selected tabs */
+	background-color:#FFF;
+	z-index:5;
+}
+.ki_tabber>div:first-child:not(:has(~div:target))>a{ /* When no tabs are targeted, default to the first one */
+	background-color:#FFF;
+	z-index:5;
+}
+.ki_tabber>div>div{                                  /* Tab content area */
+	position:absolute;
+	top:17px;
+	left:0;
+	width:100%;
+	z-index:1;
+	border:1px black solid;
+	background-color:#FFF;
+	visibility:hidden;
+}
+.ki_tabber>div:target>div{                           /* Selected tab's content area */
+	z-index:3;
+	visibility:visible;
+}
+.ki_tabber>div:first-child>div{                      /* First tab content area in front when none are selected */
+	z-index:2;
+	visibility:visible;
+}
+.ki_tabber>div:first-child:not(:has(~div:target))>div{
+	visibility:visible;
+}
+.ki_tabber>div:has(~div:target)>div{
+	visibility:hidden;
 }

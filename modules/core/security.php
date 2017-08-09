@@ -315,6 +315,11 @@ function checkLogin($username=NULL, $password=NULL, bool $remember=true, bool $l
 	}
 	
 	$db->commit(); $db->autocommit(true);
+	if(is_string($ret))
+	{
+		Request::$current->systemMessages[] = $ret;
+		return true;
+	}
 	return $ret;
 }
 
@@ -481,7 +486,7 @@ function dataTable_editUsers()
 	return new DataTable('users', 'ki_users', $fields, true, true, false, 50, false, false, false, false, $events, NULL);
 }
 
-function dataTable_register()
+function getDataTable_register()
 {
 	$reg_beforeAdd = function(&$row)
 	{
@@ -583,7 +588,7 @@ function dataTable_register()
 	{
 		if($action == 'add')
 		{
-			$text = '<span id="passwordTwins">' . $text . ' <input type="password" name="confirmRegPassword" id="confirmRegPassword" placeholder="confirm password"/></span>';
+			$text = '<span id="passwordTwins">' . $text . ' <input type="password" name="confirmRegPassword" id="confirmRegPassword" placeholder="confirm password" style="margin-left:6px;"/></span>';
 			$text .= '<script>
 				$("#passwordTwins").closest("form").submit(function(event)
 				{
@@ -622,74 +627,71 @@ class Authenticator
 	static $msg_AccountVerifyInstruction = 'Finish creating your account by clicking the following link to verify your email address:';
 	//ensure that all auth related DB error messages are the same to avoid leaking state information
 	static $msg_databaseError = 'Database error.';
-	
-	static function getMarkup_loginForm(\ki\widgets\DataTable $registerDT)
+
+	/**
+	* Get the HTML for the login form, and process requests from it except login
+	*/
+	static function getMarkup_loginForm()
 	{
 		$user = User::$current;
 		$request = Request::$current;
 		$out = '';
+		
+		Authenticator::$dataTable_register = \ki\security\getDataTable_register();
+		Authenticator::$dataTable_register->handleParams();
+		
+		$outputSpanOpen = '<span style="color:red;font-size:75%;">';
+		$sys = $outputSpanOpen . implode(', ', $request->systemMessages) . '</span>';
+		$tabberId = 'auth';
 
 		if($user === NULL)
 		{
-			$form = $registerDT->getHTML();
-			$form = str_replace('.php', '.php#tab2', $form);
-			$out .= '<ul id="ki_loginMenu" class="tab-menu"><li class="tab1"><a href="#tab1">Login</a></li><li class="tab2"><a href="#tab2">Register</a></li></ul>';
-			$out .= '<div id="ki_loginForm" class="tab-folder">';
-			$out .= '<div id="tab2" class="tab-content tab2">' . $form . '</div>';
-			$out .= '<div id="tab1" class="tab-content tab1">';
-			$out .= '<form name="ki_login" id="ki_login" method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">'
+			$regForm = Authenticator::$dataTable_register->getHTML();
+			$regForm = str_replace('.php', '.php#auth_Register', $regForm);
+			$regForm = str_replace('<ul><li>', $outputSpanOpen, $regForm);
+			$regForm = str_replace('</li></ul>', '</span>', $regForm);
+			$regForm = str_replace('</li><li>', ', ', $regForm);
+			$regOutputStart = strpos($regForm, Authenticator::$msg_AccountReg);
+			if($regOutputStart !== false)
+			{
+				$regForm = '<ul><li>' . Authenticator::$msg_AccountReg . '</li></ul>';
+			}
+			
+			$coreLogin = '<form name="ki_login" id="ki_login" method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">'
 				. '&nbsp;<input type="text" name="login_username" id="login_username" required placeholder="username"/>'
 				. '<input type="password" name="login_password" id="login_password" required placeholder="password"/>'
 				. '<input type="submit" name="login" id="login" value="Login"/>'
-				. '</form>';
-			$out .= '</div>';
-			$out .= '</div>';
-			$out .= '<style>.tab-folder > .tab-content:target ~ .tab-content:last-child, .tab-folder > .tab-content {
-		display: none;
-	}
-	.tab-folder > :last-child, .tab-folder > .tab-content:target {
-		display: block;
-	}
-	.tab-menu li{
-		display:inline-block;
-		border:solid #000000;
-		border-radius:5px 5px 0 0;
-		border-width:1px 1px 0 1px;
-		font-family:Verdana, Arial, Helvetica, sans-serif;
-		font-size:11px;
-		font-weight:bold;
-		margin-right:1px;
-		padding:1px 3px 2px 3px;
-	}
-	.tab-menu{
-		margin:0;
-		padding-left:10px;
-	}
-	.tab-folder{
-		border:1px solid #000;
-	}
-	.tab-menu li a{
-		text-decoration:none;
-		color:#000000;
-	}
-	.tab2{
-		background-color:rgb(249,249,253);
-	}
-	.tab1{
-		background-color:rgb(230,230,230);
-	}
-	</style>';
+				. '</form>'
+				. $sys;
+			$tabs = array('Login'=>$coreLogin, 'Register'=>$regForm, 'Forgot Username/Password?' => 'Coming soon<br/>');
+			$tabberHeight = '52px';
+			
+			$tabber .= \ki\widgets\targetTabber($tabberId, $tabs, '350px', 'auto');
+			$out .= $tabber;
+			$out .= '<style scoped>'
+				. '#auth_Register .ki_table>form>div{display:inline-block;float:left;}'
+				. '#' . $tabberId . '{float:right;}'
+				. '</style>';
 		}else{
-			$out .= '👤' . $user->username . '<form name="ki_logout" id="ki_logout" method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">'
-				. '<input type="submit" name="logout" id="logout" value="Logout"/>'
-				. '</form>';
+			$out .= '<div id="' . $tabberId . '" style="width:200px;height:40px;float:right;background-color:#DDD;font-family:Verdana,Arial,Helvetica,sans-serif;">'
+				. '<span style="font-size:200%;vertical-align:middle;">👤</span> &nbsp; '
+				. $user->username
+				. ' &nbsp; <span style="float:right;border-radius:5px;border:1px solid black;padding:3px;margin:5px;cursor:default;">▼</span>'
+				. '<form name="ki_logout" id="ki_logout" method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">'
+				. '<input type="submit" name="logout" id="logout" value="Logout" class="button2text"/>'
+				. '</form></div>'
+				. '<style scoped>'
+				. '#' . $tabberId . '>form{display:none;background-color:#CCC;}'
+				. '#' . $tabberId . ':hover>form{display:block;}'
+				. '#' . $tabberId . '>form>*{border-radius:5px;padding:3px;margin:5px;width:calc(100% - 8px);}'
+				. '#' . $tabberId . '>form>*:hover{background-color:#DDD;}'
+				. '</style>';
 		}
-		$out .= '<ul style="color:red;">';
-		foreach($request->systemMessages as $smsg) $out .= '<li>' . $smsg . '</li>';
-		$out .= '</ul>';
-		
+
 		return $out;
 	}
+	
+	protected static $dataTable_register;
 }
 
 /**
