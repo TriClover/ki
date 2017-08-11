@@ -1,5 +1,7 @@
 <?php
-namespace ki;
+namespace mls\ki;
+use \mls\ki\Config;
+use \mls\ki\Database;
 
 class Log
 {
@@ -28,7 +30,7 @@ class Log
 		'SYSTEMIC'=> LOG_ALERT);
 		$dt = date('Y-m-d H:i:s');
 		$levelName = $level;
-		$url = \ki\util\getUrl();
+		$url = Util::getUrl();
 		if(is_numeric($level)) $levelName = Log::levelName($level);
 		foreach(Log::$destinations as $dest)
 		{
@@ -60,7 +62,7 @@ class Log
 					
 					case 'mail':
 					//don't mail logs coming from the mail function
-					$site = config()['general']['sitename'];
+					$site = Config::get()['general']['sitename'];
 					$from = 'noreply@' . $_SERVER['SERVER_NAME'];
 
 					if($forMail)
@@ -93,7 +95,7 @@ class Log
 					$mail->FromName = $site . ' Log Mailer';
 					$mail->addAddress($dest->address);
 					$mail->Subject = $site . ' Log [' . $levelName . ']';
-					\ki\mail($mail);
+					Mail::send($mail);
 					break;
 					
 					case 'table':
@@ -123,7 +125,7 @@ class Log
 						default:
 						$line = '[' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
 					}
-					openlog(config()['general']['sitename'], LOG_NDELAY | LOG_PID, LOG_USER);
+					openlog(Config::get()['general']['sitename'], LOG_NDELAY | LOG_PID, LOG_USER);
 					syslog($pri, $line);
 					closelog();
 					break;
@@ -140,7 +142,7 @@ class Log
 						case 'html':
 						case 'plain':
 						default:
-						$line = config()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
+						$line = Config::get()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
 					}
 					error_log($line, 0);
 					break;
@@ -157,7 +159,7 @@ class Log
 						case 'html':
 						case 'plain':
 						default:
-						$line = config()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
+						$line = Config::get()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
 					}
 					error_log($line, 4);
 					break;
@@ -201,7 +203,7 @@ class Log
 		$setupErrors = array();
 		$setupWarns = array();
 		
-		foreach(config()['log']['destination'] as $index => $val)
+		foreach(Config::get()['log']['destination'] as $index => $val)
 		{
 			//load config into destination objects
 			$dest = new LogDestination();
@@ -218,17 +220,17 @@ class Log
 				$setupErrors[] = 'Unrecognized log destination: ' . $val;
 				continue;
 			}
-			$dest->format = config()['log']['format'][$index];
+			$dest->format = Config::get()['log']['format'][$index];
 			if(!in_array($dest->format, array('plain','json','html')))
 			{
 				$dest->format = 'plain';
 				$setupWarns[] = 'Unrecognized log format: ' . $dest->format . ' for destination: ' . $val . ' (defaulting to plain)';
 			}
 
-			$inThreshold = config()['log']['threshold'][$index];
+			$inThreshold = Config::get()['log']['threshold'][$index];
 			if(!is_numeric($inThreshold))
 			{
-				$convert = constant('\ki\Log::' . $inThreshold);
+				$convert = constant('\mls\ki\Log::' . $inThreshold);
 				if($convert === NULL)
 				{
 					$setupWarns[] = 'Unrecognized log threshold: ' . $inThreshold . ' for destination: ' . $val . ' (defaulting to ERROR)';
@@ -238,7 +240,7 @@ class Log
 				}
 			}
 			$dest->threshold = $inThreshold;
-			$dest->namedLevels = explode(',', config()['log']['namedlevels'][$index]);
+			$dest->namedLevels = explode(',', Config::get()['log']['namedlevels'][$index]);
 			
 			//check that the specified resources, if any, are valid
 			if($dest->type == 'mail')
@@ -287,7 +289,7 @@ class Log
 				}
 				$dbtitle = substr($dest->address,0,$dot);
 				$table = substr($dest->address,$dot+1);
-				$db = \ki\db($dbtitle);
+				$db = \ki\Database::db($dbtitle)->connection;
 				if($db === NULL)
 				{
 					$setupErrors[] = "Invalid DB specified for log: " . $dbtitle;
@@ -350,7 +352,7 @@ class Log
 		if(!empty($setupErrors) && empty(Log::$destinations))
 		{
 			//panic
-			$msg = '[SYSTEMIC] ' . config()['general']['sitename']
+			$msg = '[SYSTEMIC] ' . Config::get()['general']['sitename']
 				. ' - All configured loggers failed setup! ' . implode(';', $setupErrors);
 			error_log($msg, 0);
 			error_log($msg, 4);

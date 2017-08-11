@@ -10,7 +10,7 @@
 		"php": ">=7.0.0"
 	},
     "autoload": {
-        "files": [ "ki.php" ]
+        "psr-4": { "mls\\ki\\": "src/" }
     },
 	"extra": {
 		"component": {

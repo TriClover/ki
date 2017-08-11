@@ -1,5 +1,8 @@
 <?php
-namespace ki\widgets;
+namespace mls\ki\Widgets;
+use \mls\ki;
+use \mls\ki\Database;
+use \mls\ki\Log;
 
 /**
 * DataTable - generic data manipulation and reporting tool.
@@ -81,7 +84,7 @@ class DataTable
 		if($fields === NULL) $fields = array();
 		if(!is_array($fields))
 		{
-			\ki\Log::error('DataTable ' . $this->title . ' "fields" was not array or NULL.');
+			Log::error('DataTable ' . $this->title . ' "fields" was not array or NULL.');
 			$this->setupOK = false;
 			return;
 		}
@@ -100,12 +103,12 @@ class DataTable
 		}
 		
 		//get schema info
-		$db = \ki\db();
+		$db = Database::db()->connection;
 		$query = 'SHOW COLUMNS FROM `' . $this->table . '`';
 		$res = $db->query($query);
 		if($res === false)
 		{
-			\ki\Log::error('Getting schema info failed for dataTable ' . $this->title
+			Log::error('Getting schema info failed for dataTable ' . $this->title
 				. ' with error ' . $db->errno . ': ' . $db->error . ' -- ' . $query);
 			$setupOK = false;
 			return;
@@ -115,7 +118,7 @@ class DataTable
 			//if this field isn't in the config list, add it with default settings
 			if(!array_key_exists($row['Field'], $this->fields))
 			{
-				\ki\Log::trace('DataTable ' . $this->title . ' applying default values for unconfigured field: ' . $row['Field']);
+				Log::trace('DataTable ' . $this->title . ' applying default values for unconfigured field: ' . $row['Field']);
 				$this->fields[$row['Field']] = clone $defaultField;
 				$this->fields[$row['Field']]->name = $row['Field'];
 				$this->fields[$row['Field']]->determineAlias();
@@ -150,8 +153,8 @@ class DataTable
 			if($field->dataType === NULL)
 			{
 				unset($this->fields[$fname]);
-				\ki\Log::warn('DataTable ' . $this->title . ' asked to show a field that is not in the table: ' . $fname);
-				\ki\Log::debug(\ki\util\toString($this->fields));
+				Log::warn('DataTable ' . $this->title . ' asked to show a field that is not in the table: ' . $fname);
+				Log::debug(\mls\ki\Util::toString($this->fields));
 			}else{
 				$this->fields[$fname]->constraints = $this->findConstraints($fname);
 				if($field->show) $this->allow_show = true;
@@ -164,29 +167,29 @@ class DataTable
 		if(empty($this->pk))
 		{
 			foreach($this->fields as $fname => $field) $this->fields[$fname]->edit = false;
-			\ki\Log::trace('DataTable ' . $this->title . ' noticed there is no primary key; setting internal allow_edit to false.');
+			Log::trace('DataTable ' . $this->title . ' noticed there is no primary key; setting internal allow_edit to false.');
 		}
 		else
 		{
 			foreach($this->fields as $fname => $field)
 			{
 				if(!$field->edit) continue;
-				\ki\Log::trace('DataTable ' . $this->title . ' checking edit-validity of field with alias: ' . $field->alias);
+				Log::trace('DataTable ' . $this->title . ' checking edit-validity of field with alias: ' . $field->alias);
 				
 				if(!$field->show)
 				{
 					$this->fields[$fname]->edit = false;
-					\ki\Log::warn('DataTable ' . $this->title . 'asked to edit a field that was not shown: ' . $fname);
+					Log::warn('DataTable ' . $this->title . 'asked to edit a field that was not shown: ' . $fname);
 					continue;
 				}
 				if(in_array($fname,$this->pk))
 				{
 					$this->fields[$fname]->edit = false;
-					\ki\Log::warn('DataTable ' . $this->title . 'asked to edit a field that was part of the primary key: ' . $fname);
+					Log::warn('DataTable ' . $this->title . 'asked to edit a field that was part of the primary key: ' . $fname);
 					continue;
 				}
 				$this->allow_edit = true;
-				\ki\Log::trace('DataTable ' . $this->title . ' found an editable field; setting internal allow_edit to true.');
+				Log::trace('DataTable ' . $this->title . ' found an editable field; setting internal allow_edit to true.');
 			}
 		}
 		
@@ -209,7 +212,7 @@ class DataTable
 					&& $fval->add === false
 					&& $fval->defaultValue === NULL)
 				{
-					\ki\Log::error('In DataTable . ' . $this->title . ' field ' . $fname . ' is set NOT NULL with no auto_increment, but was configured as not editable in new rows, and has no default value here or in the schema. Thus adding new rows is not possible.');
+					Log::error('In DataTable . ' . $this->title . ' field ' . $fname . ' is set NOT NULL with no auto_increment, but was configured as not editable in new rows, and has no default value here or in the schema. Thus adding new rows is not possible.');
 					$this->allow_add = false;
 					foreach($this->fields as $fieldname => $field)
 						$this->fields[$fieldname]->add = false;
@@ -223,7 +226,7 @@ class DataTable
 		{
 			if(!array_key_exists($this->allow_delete, $this->fields))
 			{
-				\ki\Log::error('DataTable ' . $title . ' specified non existent deletion-tracking field ' . $this->allow_delete);
+				Log::error('DataTable ' . $title . ' specified non existent deletion-tracking field ' . $this->allow_delete);
 				$this->allow_delete = false;
 			}
 		}
@@ -231,18 +234,18 @@ class DataTable
 	
 	function getHTML()
 	{
-		\ki\Log::trace('Getting HTML for dataTable');
+		Log::trace('Getting HTML for dataTable');
 		
 		//check preconditions
 		if(!$this->setupOK) return '';
 		if($this->printed)
 		{
-			\ki\Log::warn('Generated HTML for the same DataTable twice in one page load. This is bad for performance.');
+			Log::warn('Generated HTML for the same DataTable twice in one page load. This is bad for performance.');
 		}
 		$this->printed = true;
 		if(!$this->handledParams)
 		{
-			\ki\Log::warn('DataTable generating HTML without having handled params. This may cause usability issues.');
+			Log::warn('DataTable generating HTML without having handled params. This may cause usability issues.');
 		}
 		
 		//process state info
@@ -252,7 +255,7 @@ class DataTable
 		//shown fields
 		if(!$this->allow_show)
 		{
-			\ki\Log::warn('DataTable: No fields were selected to be shown');
+			Log::warn('DataTable: No fields were selected to be shown');
 			return '';
 		}
 		$fields = array(); //query snippets listing each real field and its alias if any
@@ -263,12 +266,12 @@ class DataTable
 		$fields = implode(',', $fields);
 		
 		//get data
-		$db = \ki\db();
+		$db = Database::db()->connection;
 		$query = 'SELECT SQL_CALC_FOUND_ROWS ' . $fields . ' FROM ' . $this->table . ' WHERE ' . $this->filter . ' LIMIT ' . $limit_start . ',' . $this->rows_per_page;
 		$res = $db->query($query);
 		if($res === false)
 		{
-			\ki\Log::error('Query failed for dataTable ' . $this->title
+			Log::error('Query failed for dataTable ' . $this->title
 				. ' with error ' . $db->errno . ': ' . $db->error . ' -- ' . $query);
 			return '';
 		}
@@ -276,7 +279,7 @@ class DataTable
 		$total_res = $db->query($query);
 		if($total_res === false)
 		{
-			\ki\Log::error('Query failed for dataTable ' . $this->title
+			Log::error('Query failed for dataTable ' . $this->title
 				. ' with error ' . $db->errno . ': ' . $db->error . ' -- ' . $query);
 			return '';
 		}
@@ -332,7 +335,7 @@ class DataTable
 				$realCol = $this->realColName($col);
 				if($realCol === NULL)
 				{
-					\ki\Log::error('DataTable got unknown alias back from database: ' . $alias);
+					Log::error('DataTable got unknown alias back from database: ' . $alias);
 					return '';
 				}
 				if(!$this->fields[$realCol]->show) continue;
@@ -535,7 +538,7 @@ HTML;
 			$reg_result = preg_match($regex,$this->fields[$col]->dataType, $reg_matches);
 			if($reg_result == 1)
 			{
-				\ki\Log::trace('Found maxlength');
+				Log::trace('Found maxlength');
 				$out['maxlength'] = $reg_matches[1];
 				if($out['maxlength'] < 20) $out['size'] = $reg_matches[1];
 			}
@@ -550,7 +553,7 @@ HTML;
 		if(!is_array($this->fields[$col]->constraints))
 		{
 			$this->fields[$col]->constraints = array();
-			\ki\Log::warn('DataTable ' . $this->title . ' had invalid constraints for field: ' . $col);
+			Log::warn('DataTable ' . $this->title . ' had invalid constraints for field: ' . $col);
 		}
 		$out = array_merge($out,$this->fields[$col]->constraints);
 		
@@ -578,21 +581,21 @@ HTML;
 	*/
 	function handleParams($post = NULL, $get = NULL)
 	{
-		\ki\Log::trace('Handling params for DataTable ' . $this->title);
-		$db = \ki\db();
+		Log::trace('Handling params for DataTable ' . $this->title);
+		$db = Database::db()->connection;
 		$didSomething = false;
 		
 		//check preconditions
 		if(!$this->setupOK) return false;
 		if($this->handledParams)
 		{
-			\ki\Log::error('Tried to handle params for the same DataTable twice in one page load');
+			Log::error('Tried to handle params for the same DataTable twice in one page load');
 			return false;
 		}
 		$this->handledParams = true;
 		if($this->printed)
 		{
-			\ki\Log::error('DataTable handling params after generating HTML, but getHtml assumes params have already been handled and probably showed wrong information');
+			Log::error('DataTable handling params after generating HTML, but getHtml assumes params have already been handled and probably showed wrong information');
 		}
 		
 		//interpret arguments
@@ -602,11 +605,11 @@ HTML;
 		//set state from params
 		if(isset($get[$this->inPrefix . 'page']) && empty($post))
 		{
-			\ki\Log::trace('DataTable ' . $this->title . ' found GET and no POST');
+			Log::trace('DataTable ' . $this->title . ' found GET and no POST');
 			$this->page = (int)$get[$this->inPrefix . 'page'];
 			return false; //if GET was used, don't process POST
 		}
-		\ki\Log::trace('DataTable ' . $this->title . ' done checking for GET, continuing to POST');
+		Log::trace('DataTable ' . $this->title . ' done checking for GET, continuing to POST');
 		if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
 		
 		//interpret and verify edits to save
@@ -623,36 +626,36 @@ HTML;
 			{
 				if($this->allow_delete === false)
 				{
-					\ki\Log::warn('DataTable: Tried to delete a row but deleting is not allowed');
+					Log::warn('DataTable: Tried to delete a row but deleting is not allowed');
 					continue;
 				}
 				elseif($this->allow_delete !== true && !isset($this->fields[$this->allow_delete]))
 				{
-					\ki\Log::error("DataTable: Tried to delete a row but deactivation field doesn't exist");
+					Log::error("DataTable: Tried to delete a row but deactivation field doesn't exist");
 					continue;
 				}
 				$key = mb_substr($key,mb_strlen($deletePrefix));
 				$key = base64_decode($key);
 				if($key === false)
 				{
-					\ki\Log::warn('DataTable delete button failed base64 decoding');
+					Log::warn('DataTable delete button failed base64 decoding');
 					continue;
 				}
 				$key = json_decode($key);
 				if($key === NULL)
 				{
-					\ki\Log::warn('DataTable delete button failed json decoding');
+					Log::warn('DataTable delete button failed json decoding');
 					continue;
 				}
 				if(count($key) != 2)
 				{
-					\ki\Log::warn('DataTable delete button had wrong number of root elements');
+					Log::warn('DataTable delete button had wrong number of root elements');
 					continue;
 				}
 				$pk_values = $key[1];
 				if(count($pk_values) != count($this->pk))
 				{
-					\ki\Log::warn('DataTable delete button had wrong number of primary key values');
+					Log::warn('DataTable delete button had wrong number of primary key values');
 					continue;
 				}
 				$deleteKeys[] = $pk_values;
@@ -667,29 +670,29 @@ HTML;
 				$key = base64_decode($key);
 				if($key === false)
 				{
-					\ki\Log::warn('DataTable callback button failed base64 decoding');
+					Log::warn('DataTable callback button failed base64 decoding');
 					continue;
 				}
 				$key = json_decode($key);
 				if($key === NULL)
 				{
-					\ki\Log::warn('DataTable callback button failed json decoding');
+					Log::warn('DataTable callback button failed json decoding');
 					continue;
 				}
 				if(count($key) != 2)
 				{
-					\ki\Log::warn('DataTable callback button had wrong number of root elements');
+					Log::warn('DataTable callback button had wrong number of root elements');
 					continue;
 				}
 				$pk_values = $key[1];
 				if(count($pk_values) != count($this->pk))
 				{
-					\ki\Log::warn('DataTable callback button had wrong number of primary key values');
+					Log::warn('DataTable callback button had wrong number of primary key values');
 					continue;
 				}
 				if(!isset($this->buttonCallbacks[$cbName]) || $this->buttonCallbacks[$cbName] != $cbFunc)
 				{
-					\ki\Log::warn('DataTable callback button specificed invalid function/name: ' . $cbName . ',' . $cbFunc);
+					Log::warn('DataTable callback button specificed invalid function/name: ' . $cbName . ',' . $cbFunc);
 					continue;
 				}
 				$pkNamed = array();
@@ -702,18 +705,18 @@ HTML;
 				$key = base64_decode($key);
 				if($key === false)
 				{
-					\ki\Log::warn('DataTable edit parameter failed base64 decoding');
+					Log::warn('DataTable edit parameter failed base64 decoding');
 					continue;
 				}
 				$key = json_decode($key);
 				if($key === NULL)
 				{
-					\ki\Log::warn('DataTable edit parameter failed json decoding');
+					Log::warn('DataTable edit parameter failed json decoding');
 					continue;
 				}
 				if(count($key) != 2)
 				{
-					\ki\Log::warn('DataTable edit parameter had wrong number of root elements');
+					Log::warn('DataTable edit parameter had wrong number of root elements');
 					continue;
 				}
 				$col = $key[0];
@@ -721,13 +724,13 @@ HTML;
 				if(!isset($post[$this->inputId('0', $pk_values, 'submit')])) continue; //skip if save wasn't clicked
 				if(count($pk_values) != count($this->pk))
 				{
-					\ki\Log::warn('DataTable edit parameter had wrong number of primary key values');
+					Log::warn('DataTable edit parameter had wrong number of primary key values');
 					continue;
 				}
 				$pk_values = json_encode($pk_values);
 				if(!$this->fields[$col]->edit)
 				{
-					\ki\Log::warn('Tried to edit non-editable field');
+					Log::warn('Tried to edit non-editable field');
 					continue;
 				}
 				if(!isset($changesToSave[$pk_values])) $changesToSave[$pk_values] = array();
@@ -738,7 +741,7 @@ HTML;
 				$col = mb_substr($key,mb_strlen($newPrefix));
 				if($this->fields[$col]->add !== true)
 				{
-					\ki\Log::warn('(DataTable) Tried to specify value for new row in field not editable in new rows');
+					Log::warn('(DataTable) Tried to specify value for new row in field not editable in new rows');
 					continue;
 				}
 				$newRow[$col] = $value;
@@ -786,7 +789,7 @@ HTML;
 			$res = $db->query($query);
 			if($res === false)
 			{
-				\ki\Log::warn('DataTable ' . $this->title . ': Bad query deleting row: ' . $query);
+				Log::warn('DataTable ' . $this->title . ': Bad query deleting row: ' . $query);
 				$this->outputMessage[] = 'Failed to delete row ' . htmlspecialchars(implode(',',$pk));
 			}else{
 				if($db->affected_rows == 0)
@@ -808,19 +811,19 @@ HTML;
 		//query for saving edits
 		foreach($changesToSave as $pk => $vals) //for each row
 		{
-			\ki\Log::trace('Checking changes for row ' . $pk);
+			Log::trace('Checking changes for row ' . $pk);
 			$pk = json_decode($pk);
 			$query = 'UPDATE `' . $this->table . '` SET ';
 			$setVals = array();
 
 			foreach($vals as $col => $value) //for each field in the row
 			{
-				\ki\Log::trace('Checking field ' . $col);
+				Log::trace('Checking field ' . $col);
 				$alias = $this->fields[$col]->alias;
 				$constraintsPass = true;
 				foreach($this->fields[$col]->constraints as $cname => $cval) //for each html5 constraint applying to the column
 				{
-					\ki\Log::trace('Checking constraint ' . $cname);
+					Log::trace('Checking constraint ' . $cname);
 					$conres = $this->checkConstraint($cname, $cval, $value, $alias);
 					if($conres !== true)
 					{
@@ -830,7 +833,7 @@ HTML;
 					}
 				}
 				if(!$constraintsPass) continue;
-				\ki\Log::trace('Constraints passed.');
+				Log::trace('Constraints passed.');
 				if($value == "")
 				{
 					$value = 'NULL';
@@ -877,7 +880,7 @@ HTML;
 			$res = $db->query($query);
 			if($res === false)
 			{
-				\ki\Log::warn('DataTable ' . $this->title . ': Bad query updating row: ' . $query);
+				Log::warn('DataTable ' . $this->title . ': Bad query updating row: ' . $query);
 				$this->outputMessage[] = 'Failed to update row ' . htmlspecialchars(implode(',',$pk));
 			}else{
 				if($db->affected_rows == 0)
@@ -967,7 +970,7 @@ HTML;
 				{
 					$err = $db->error;
 					$this->outputMessage[] = 'Error adding new row: ' . $err;
-					\ki\Log::error('Bad SQL query adding new row: '  . $err . ' for query: ' . $query);
+					Log::error('Bad SQL query adding new row: '  . $err . ' for query: ' . $query);
 				}else{
 					$insert_id = $db->insert_id;
 					$message = 'New row added successfully';
@@ -1058,7 +1061,7 @@ HTML;
 	protected function pager($pages)
 	{
 		$out = '<div style="text-align:center;display:inline-block;">';
-		$pageList = \ki\util\pagesToShow($this->page,$pages);
+		$pageList = \mls\ki\Util::pagesToShow($this->page,$pages);
 		$pageParam = $this->inPrefix . 'page';
 		
 		//first row: arrows and direct page input
@@ -1155,92 +1158,6 @@ HTML;
 		if(mb_strpos($type, 'datetime') !== false) return 'datetime';
 		
 		return 'text';
-	}
-}
-
-class DataTableField
-{
-	//Identification
-	public $name;            //Always required. If NULL, use these settings for fields not specified.
-	public $table = NULL;    //NULL = same as main table. Other tables will be LEFT JOINed in on the first foreign key found. For tables with no direct foreign key it will look for a many-to-many-relation table named maintable_othertable with appropriate foreign keys.
-	public $alias = NULL;    //NULL = same as $name unless $table is specified in which case it will be $table.$name
-	//Where to use the field
-	public $show = true;
-	public $edit = false;    //Ignored if $show = false
-	public $add  = true;     //What to do for this field when adding new rows. true=allow editing, false=disallow and use default/auto value, and string/number/NULL=disallow and use this value instead. Ignored if adding new rows is not allowed or $show = false.
-	//Validation
-	public $constraints = array(); //HTML5 form validation constraints. These will be used directly in the form and interpreted for server-side checks.
-	//Presentation
-	public $outputFilter = NULL; //Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
-	
-	function __construct($name,
-	                     $table = NULL,
-						 $alias = NULL,
-						 $show = true,
-						 $edit = false,
-						 $add = NULL,
-						 $constraints = array(),
-						 $outputFilter = NULL)
-	{
-		$this->name = $name;
-		$this->table = $table;
-		if($alias === NULL)
-			$this->determineAlias();
-		else
-			$this->alias = $alias;
-		$this->show = $show;
-		$this->edit = $edit;
-		$this->add = $add;
-		$this->constraints = ($constraints === NULL) ? array() : $constraints;
-		$this->outputFilter = $outputFilter;
-	}
-	
-	function determineAlias()
-	{
-		$this->alias = ($this->table === NULL) ? $this->name : ($this->table.'.'.$this->name);
-	}
-	
-	//schema
-	public $dataType     = NULL;
-	public $nullable     = NULL;
-	public $keyType      = NULL; //PRI, UNI, MUL
-	public $defaultValue = NULL;
-	public $extra        = NULL;
-}
-
-/**
-  (onAdd, onEdit, onDelete): Called on successful action.
-    Callback will recieve a list of affected rows by PK.
-	PK is passed as an array mapping field name to value.
-	Return value if any is shown to the user.
-  (beforeAdd, beforeEdit, beforeDelete): Called before action is tried.
-    beforeAdd/beforeEdit recieve an array with all values of the proposed row,
-	beforeDelete recieves the PK.
-	Function must return boolean TRUE to approve the action,
-	any other value is taken as an error string to show the user.
-*/
-class DataTableEventCallbacks
-{
-	public $onAdd        = NULL;
-	public $onEdit       = NULL;
-	public $onDelete     = NULL;
-	public $beforeAdd    = NULL;
-	public $beforeEdit   = NULL;
-	public $beforeDelete = NULL;
-	function __construct(
-		$add          = NULL,
-		$edit         = NULL,
-		$delete       = NULL,
-		$beforeadd    = NULL,
-		$beforeedit   = NULL,
-		$beforedelete = NULL)
-	{
-		$this->onAdd        = $add;
-		$this->onEdit       = $edit;
-		$this->onDelete     = $delete;
-		$this->beforeAdd    = $beforeadd;
-		$this->beforeEdit   = $beforeedit;
-		$this->beforeDelete = $beforedelete;
 	}
 }
 
