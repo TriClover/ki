@@ -180,3 +180,70 @@ body{
 .ki_tabber>div:has(~div:target)>div{
 	visibility:hidden;
 }
+
+/* Menu */
+.ki_menu {
+	position: relative;
+	display: inline-block;
+	font-family:Verdana, Arial, Helvetica, sans-serif;
+	white-space:nowrap;
+}
+.ki_menu:focus ul, .ki_menu:hover ul {
+	opacity: 1;
+	visibility: visible;
+}
+.ki_menu ul {
+	position: absolute;
+	z-index: 1;
+	opacity: 0;
+	visibility: hidden;
+	transition: visibility 0.5s;
+}
+.ki_menu div {
+	padding: 5px;
+	background-color: #DDD;
+	white-space:nowrap;
+	color:#000;
+	font-size:16px;
+}
+.ki_menu div span:first-child{
+	color:#FFF;
+	font-size:15px;
+	float:right;
+	padding-left:10px;
+}
+.ki_menu ul {
+	background-color: #CCC;
+	width: auto;
+	margin-top: 0;
+	margin-left: 0;
+	padding: 5px;
+}
+.ki_menu li {
+	color: #000;
+	list-style-type: none;
+	white-space: nowrap;
+	text-align:center;
+	margin:0;
+}
+.ki_menu a, .ki_menu input[type=submit]{
+	text-decoration:none;
+	color:#000;
+	font-family:Arial, Helvetica, sans-serif;
+	font-size:12px;
+	padding:5px;
+	border-radius:5px;
+	display:inline-block;
+	margin:0;
+}
+.ki_menu a {
+	width:calc(100% - 10px);
+	height:15px;
+}
+.ki_menu input[type=submit] {
+	width:100%;
+	height:25px;
+}
+.ki_menu a:hover, .ki_menu input[type=submit]:hover{
+	background-color:#DDD;
+}

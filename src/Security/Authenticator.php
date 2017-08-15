@@ -1,13 +1,13 @@
 <?php
 namespace mls\ki\Security;
-use \mls\ki;
 use \mls\ki\Database;
 use \mls\ki\Mail;
 use \mls\ki\Util;
-use \mls\ki\Widgets;
 use \mls\ki\Widgets\DataTable;
 use \mls\ki\Widgets\DataTableField;
 use \mls\ki\Widgets\DataTableEventCallbacks;
+use \mls\ki\Widgets\Menu;
+use \mls\ki\Widgets\MenuItem;
 use \mls\ki\Widgets\TargetTabber;
 
 class Authenticator
@@ -529,20 +529,10 @@ class Authenticator
 				. '#' . $tabberId . '{float:right;}'
 				. '</style>';
 		}else{
-			$out .= '<div id="' . $tabberId . '" style="width:200px;height:44px;float:right;background-color:#DDD;font-family:Verdana,Arial,Helvetica,sans-serif;">'
-				. '<span style="font-size:200%;vertical-align:middle;">👤</span> &nbsp; '
-				. $user->username
-				. ' &nbsp; <span style="float:right;padding:3px;margin:5px;cursor:default;color:white;">▼</span>'
-				. '<br/>' . $sys
-				. '<form name="ki_logout" id="ki_logout" method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">'
-				. '<input type="submit" name="logout" id="logout" value="Logout" class="button2text"/>'
-				. '</form></div>'
-				. '<style scoped>'
-				. '#' . $tabberId . '>form{display:none;background-color:#CCC;}'
-				. '#' . $tabberId . ':hover>form{display:block;}'
-				. '#' . $tabberId . '>form>*{border-radius:5px;padding:3px;margin:5px;width:calc(100% - 10px);}'
-				. '#' . $tabberId . '>form>*:hover{background-color:#DDD;}'
-				. '</style>';
+			$items = array();
+			$items[] = new MenuItem('Logout', $_SERVER['SCRIPT_NAME'], array('logout' => '1'));
+			$menuButton = '👤 ' . $user->username . '<br/>' . $sys;
+			$out .= Menu::getHTML($menuButton, $items, array('float'=>'right', 'height'=>'34px'));
 		}
 
 		return $out;
