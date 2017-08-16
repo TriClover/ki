@@ -247,3 +247,62 @@ body{
 .ki_menu a:hover, .ki_menu input[type=submit]:hover{
 	background-color:#DDD;
 }
+
+/* RadTabber */
+.ki_rtabber{                             /* Whole widget */
+	position:relative;
+}
+.ki_rtabber input{                       /* Radio buttons */
+	display:none;
+	float:left;
+}
+.ki_rtabber div{                         /* Content areas */
+	display:none;
+	border:1px black solid;
+	position:absolute;
+	top:17px;
+	left:0;
+	z-index:2;
+	font-family:initial;
+	font-weight:normal;
+	font-size:initial;
+}
+.ki_rtabber input:checked + label + div{ /* Selected content areas */
+	display:block;
+}
+.ki_rtabber label{                       /* Tabs */
+	position:relative;
+	cursor:pointer;
+	float:left;
+	height:16px;
+	border:black solid;
+	border-radius:5px 15px 0 0;
+	border-width:1px 1px 0 1px;
+	margin:0 -7px 0 2px;
+	padding:1px 15px 0 5px;
+	background-color:#DDD;
+	text-decoration:none;
+	color:#000;
+	font-family:Verdana,Arial,Helvetica,sans-serif;
+	font-weight:bold;
+	font-size:10px;
+	z-index:1;
+}
+.ki_rtabber input:checked + label{       /* Selected tab */
+	z-index:3;
+	background-color:#FFF;
+}
+.ki_rtabber_fullWidth{                   /* class applied to content areas when widget has a specified width */
+	width:calc(100% - 2px);
+}
+.ki_rtabber input.ki_rtabber_untab{      /* "untab" reverts tabs to their natural radio button state */
+	display:block;
+}
+.ki_rtabber input.ki_rtabber_untab + label{
+	border:none;
+	background-color:#FFF;
+	margin: 0;
+}
+.ki_rtabber input.ki_rtabber_untab + label + div{
+	border:none;
+}
