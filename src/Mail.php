@@ -1,5 +1,6 @@
 <?php
 namespace mls\ki;
+use \mls\ki\Log;
 
 class Mail
 {
@@ -81,7 +82,7 @@ class Mail
 			{
 				if(!is_numeric($level))
 				{
-					$convert = constant('\ki\Log::' . $level);
+					$convert = constant('\mls\ki\Log::' . $level);
 					if($convert !== NULL) $level = $convert;
 				}
 				Log::log($level, $line, true);

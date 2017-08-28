@@ -61,14 +61,13 @@ CREATE TABLE `ki_nonces` (
   `user` int(11) DEFAULT NULL,
   `session` char(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created` datetime NOT NULL,
-  `purpose` enum('email_verify','csrf','reauth') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `purpose` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   PRIMARY KEY (`nonce_hash`),
   KEY `nonces_user_users_id_idx` (`user`),
   KEY `nonces_ss_sss_idh_idx` (`session`),
   CONSTRAINT `nonces_ss_sss_idh` FOREIGN KEY (`session`) REFERENCES `ki_sessions` (`id_hash`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `nonces_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 
 CREATE TABLE `ki_permissions` (
   `id` int(11) NOT NULL AUTO_INCREMENT,

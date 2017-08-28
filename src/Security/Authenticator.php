@@ -1,6 +1,8 @@
 <?php
 namespace mls\ki\Security;
+use \mls\ki\Config;
 use \mls\ki\Database;
+use \mls\ki\Log;
 use \mls\ki\Mail;
 use \mls\ki\Util;
 use \mls\ki\Widgets\DataTable;
@@ -9,6 +11,7 @@ use \mls\ki\Widgets\DataTableEventCallbacks;
 use \mls\ki\Widgets\Menu;
 use \mls\ki\Widgets\MenuItem;
 use \mls\ki\Widgets\TargetTabber;
+use \mls\ki\Widgets\RadTabber;
 
 class Authenticator
 {
@@ -152,12 +155,17 @@ class Authenticator
 		}
 		
 		//check for nonces
-		//email verification nonce
-		if(isset($_GET['ki_nonce']) && !empty($_GET['ki_nonce']) && !$ipBlocked)
+		Log::trace('(checkLogin) Checking for special nonces...');
+		$providedNonce = NULL;
+		if(isset($_GET['ki_nonce']) && !empty($_GET['ki_nonce'])) $providedNonce = $_GET['ki_nonce'];
+		if(isset($_POST['ki_nonce']) && !empty($_POST['ki_nonce'])) $providedNonce = $_POST['ki_nonce'];
+		if($providedNonce !== NULL && !$ipBlocked)
 		{
-			$nonce = $_GET['ki_nonce'];
+			Log::trace('(checkLogin) Nonce provided');
+			$nonce = $providedNonce;
 			$nonceHash = Authenticator::pHash($nonce);
-			$nRes = $db->query('SELECT `ki_nonces`.`user` AS user,UNIX_TIMESTAMP(`ki_nonces`.`created`) AS created, `ki_users`.`username` AS name FROM `ki_nonces` LEFT JOIN `ki_users` ON `ki_nonces`.`user`=`ki_users`.`id` WHERE `nonce_hash`=? AND `purpose`="email_verify" LIMIT 1',
+			
+			$nRes = $db->query('SELECT `ki_nonces`.`user` AS user,UNIX_TIMESTAMP(`ki_nonces`.`created`) AS created, `ki_users`.`username` AS name, `ki_nonces`.`purpose` AS purpose FROM `ki_nonces` LEFT JOIN `ki_users` ON `ki_nonces`.`user`=`ki_users`.`id` WHERE `nonce_hash`=? LIMIT 1',
 				array($nonceHash), 'checking for email verification nonce');
 			if($nRes !== false)
 			{
@@ -167,22 +175,39 @@ class Authenticator
 						array($sid, $ipData['id']), 'logging invalid nonce');
 					$loggedABadAttempt = true;
 				}else{
+					Log::trace('(checkLogin) Nonce found in database');
 					$nonceCreated = $nRes[0]['created'];
 					$nonceUser = $nRes[0]['user'];
 					$nonceUsername = $nRes[0]['user'];
+					$purpose = $nRes[0]['purpose'];
 					$nonceExpires = $nonceCreated + (\mls\ki\Config::get()['limits']['nonceExpiry_hours'] * 60 * 60);
 					if($nonceExpires < time())
 					{
+						Log::trace('(checkLogin) Nonce expired');
 						Authenticator::$session->systemMessages[] = 'The email verification link you clicked was expired. '
 							. 'Try doing whatever you were doing again to get a new link. Do not click that same link again.';
 					}else{
-						$db->query('UPDATE `ki_users` SET `email_verified`=1 WHERE `id`=? LIMIT 1',
-							array($nonceUser), 'setting email verification flag to TRUE for user');
-						Authenticator::$request->verifiedEmail = true;
-						Authenticator::$request->systemMessages[] = 'Email verified.';
-						//log in the user
-						$potentialCookie = Authenticator::loginUser($nonceUser, $remember);
-						if($potentialCookie !== NULL) $cookieParams = $potentialCookie;
+						Log::trace('(checkLogin) Nonce found to still be fresh');
+						if($purpose == 'email_verify')
+						{
+							Log::trace('(checkLogin) Nonce identified as email verification');
+							$db->query('UPDATE `ki_users` SET `email_verified`=1 WHERE `id`=? LIMIT 1',
+								array($nonceUser), 'setting email verification flag to TRUE for user');
+							Authenticator::$request->systemMessages[] = 'Email verified.';
+							//log in the user
+							$potentialCookie = Authenticator::loginUser($nonceUser, $remember);
+							if($potentialCookie !== NULL) $cookieParams = $potentialCookie;
+						}
+						elseif($purpose == 'reauth')
+						{
+							Log::trace('(checkLogin) Nonce identified as email reauth for password change');
+							Authenticator::$request->verifiedEmailForPasswordReset = $nonceUser;
+						}
+						elseif($purpose == 'passwordReset')
+						{
+							Log::trace('(checkLogin) Nonce identified as password change final step');
+							Authenticator::$request->verifiedPasswordResetFinal = $nonceUser;
+						}
 					}
 					$db->query('DELETE FROM `ki_nonces` WHERE `nonce_hash`=? LIMIT 1',
 						array($nonceHash), 'Deleting used nonce');
@@ -199,7 +224,6 @@ class Authenticator
 					array(Authenticator::$session->id_hash), 'terminating session being replaced');
 				Authenticator::$session = NULL;
 				Authenticator::$user = NULL;
-				Authenticator::$request->verifiedEmail = false;
 			}
 			
 			$user = $db->query('SELECT `id`, `email`, `email_verified`, `password_hash`, `enabled`, UNIX_TIMESTAMP(`last_active`) AS last_active FROM `ki_users` WHERE `username`=? LIMIT 1',
@@ -496,8 +520,8 @@ class Authenticator
 		Authenticator::$dataTable_register = Authenticator::getDataTable_register();
 		Authenticator::$dataTable_register->handleParams();
 		
-		$outputSpanOpen = '<span style="color:red;font-size:75%;">';
-		$sys = $outputSpanOpen . implode(', ', $request->systemMessages) . '</span>';
+		$outputSpanOpen = '<span style="color:red;font-size:75%;float:right;">';
+		
 		$tabberId = 'auth';
 
 		if($user === NULL)
@@ -517,9 +541,9 @@ class Authenticator
 				. '&nbsp;<input type="text" name="login_username" id="login_username" required placeholder="username"/>'
 				. '<input type="password" name="login_password" id="login_password" required placeholder="password"/>'
 				. '<input type="submit" name="login" id="login" value="Login"/>'
-				. '</form>'
-				. $sys;
-			$tabs = array('Login'=>$coreLogin, 'Register'=>$regForm, 'Forgot Username/Password?' => 'Coming soon<br/>');
+				. '</form>';
+			$resetForm = str_replace('.php', '.php#auth_ForgotUsernamePassword', Authenticator::getMarkup_resetForm());
+			$tabs = array('Login'=>$coreLogin, 'Register'=>$regForm, 'Forgot Username/Password?' => $resetForm);
 			$tabberHeight = '52px';
 			
 			$tabber = TargetTabber::getHTML($tabberId, $tabs, '350px', 'auto');
@@ -531,11 +555,131 @@ class Authenticator
 		}else{
 			$items = array();
 			$items[] = new MenuItem('Logout', $_SERVER['SCRIPT_NAME'], array('logout' => '1'));
-			$menuButton = '👤 ' . $user->username . '<br/>' . $sys;
+			$menuButton = '👤 ' . $user->username . '<br/>';
 			$out .= Menu::getHTML($menuButton, $items, array('float'=>'right', 'height'=>'34px'));
 		}
+		$sys = $outputSpanOpen . implode(', ', $request->systemMessages) . '</span>';
+		$out .= $sys;
 
 		return $out;
+	}
+	
+	public static function getMarkup_resetForm()
+	{
+		Log::trace('Getting markup for password reset form');
+		$config = Config::get()['policies'];
+		$db = Database::db();
+		if(isset($_POST['forgot']) && isset($_POST['email']))
+		{
+			Log::trace('Processing initial password reset request');
+			$site = Config::get()['general']['sitename'];
+			$from = 'noreply@' . $_SERVER['SERVER_NAME'];
+			$mail = new \PHPMailer\PHPMailer\PHPMailer;
+			$mail->From = $from;
+			$mail->FromName = $site . ' Account Maintenance';
+			$mail->addAddress($_POST['email']);
+			
+			if(isset($_POST['username'])) //password reset
+			{
+				$userData = $db->query('SELECT `id`,`email_verified` FROM `ki_users` WHERE `email`=? AND `username`=?',
+					array($_POST['email'], $_POST['username']),
+					'getting id of user');
+				if($userData === false) return "Database error.";
+				if(!empty($userData))
+				{
+					$userid = $userData[0]['id'];
+					$emailVerified = $userData[0]['email_verified'];
+					$idPair = Authenticator::generateNonceId();
+					$nid = $idPair[0];
+					$nidHash = $idPair[1];
+					//if email not verified, send verification mail instead
+					if(!$emailVerified)
+					{
+						$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="email_verify"',
+								array($nidHash, $userid),
+								'adding nonce for email verify on attempted password reset without verified email');
+						if($nRes === false) return 'Database error.';
+						$link = Util::getUrl() . '?ki_nonce=' . $nid;
+						$mail->Subject = $site . ' Account Creation';
+						$mail->Body = Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
+					}else{
+						$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="reauth"',
+							array($nidHash, $userid), 'adding reauth nonce for password reset');
+						if($nRes === false) return 'Database error.';
+						$link = Util::getUrl() . '?ki_nonce=' . $nid . '#auth_ForgotUsernamePassword';
+						$mail->Subject = $site . ' Password Reset';
+						$mail->Body = 'Reset your password by following this link: ' . "\n" . $link;
+					}
+					Mail::send($mail);
+				}
+			}else{                        //username recovery
+				$userData = $db->query('SELECT `username` FROM `ki_users` WHERE `email`=?', array($_POST['email']),
+					'getting username for user with given email');
+				if($userData === false) return "Database error.";
+				if(!empty($userData))
+				{
+					$username = $userData[0]['username'];
+					$mail->Subject = $site . ' Username Recovery';
+					$mail->Body = 'We recieved a username recovery request for this email address. '
+						. "\n" . 'Your username is ' . $username;
+					Mail::send($mail);
+				}
+			}
+			return 'Request recieved - check your email.<br/><div style="height:5px;">&nbsp;</div>';
+		}
+		elseif(Authenticator::$request->verifiedEmailForPasswordReset !== NULL) //Email reauthed, show new password form
+		{
+			Log::trace('Processing email token for password reset request');
+			$idPair = Authenticator::generateNonceId();
+			$csrf = $idPair[0];
+			$hash = $idPair[1];
+			$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="passwordReset"',
+				array($hash, Authenticator::$request->verifiedEmailForPasswordReset),
+				'adding final step password reset nonce');
+			if($nRes === false) return 'Database error.';
+			$form = '<form method="post" id="ki_passwordResetter" action="' . $_SERVER['SCRIPT_NAME']
+				. '">Enter a new password here:<br/>'
+				. '<input type="hidden" name="ki_nonce" value="' . $csrf . '" />'
+				. '<input type="password" name="reset_password"         id="reset_password"         required placeholder="New password"         pattern="' . $config['passwordRegex'] . '" title="' . $config['passwordRegexDescription'] . '" />'
+				. '<input type="password" name="reset_password_confirm" id="reset_password_confirm" required placeholder="Confirm new password" pattern="' . $config['passwordRegex'] . '" title="' . $config['passwordRegexDescription'] . '" />'
+				. '<input type="submit" name="reset_password_submit" value="Submit"/>'
+				. '</form>';
+			$form .= '<script>
+					$("#ki_passwordResetter").submit(function(event)
+					{
+						if($("#reset_password").val() != $("#reset_password_confirm").val())
+						{
+							alert("Password and confirmation must match.");
+							return false;
+						}
+					});</script>';
+			return $form;
+		}
+		elseif(isset($_POST['reset_password']) && isset($_POST['reset_password_confirm']))
+		{
+			Log::trace('Processing final step of password reset');
+			$preg_result = preg_match('/'.$config['passwordRegex'].'/',$_POST['reset_password']);
+			if(Authenticator::$request->verifiedPasswordResetFinal === NULL)
+			{
+				Authenticator::$request->systemMessages[] = "Token invalid while entering new password. Try again.";
+			}elseif($preg_result != 1){
+				Authenticator::$request->systemMessages[] = "Password must match the pattern: " . $config['passwordRegexDescription'];
+			}elseif($_POST['reset_password'] != $_POST['reset_password_confirm']){
+				Authenticator::$request->systemMessages[] = 'Password and confirmation must match.';
+			}else{
+				//turn the password into a hash before storing
+				$hash = \password_hash($_POST['reset_password'], PASSWORD_BCRYPT);
+				$db->query('UPDATE `ki_users` SET `password_hash`=? WHERE `id`=? LIMIT 1',
+					array($hash, Authenticator::$request->verifiedPasswordResetFinal),
+					'changing user password from reset form');
+				return 'Password changed successfully. Try logging in with it now.';
+			}
+		}
+		Log::trace('Returning markup for initial password reset form');
+		$formOpen = '<form method="post" action="' . $_SERVER['SCRIPT_NAME'] . '"><input type="email" name="email" placeholder="email" style="clear:both;" required/>';
+		$formClose = '</form>';
+		$tabs = array('Forgot Password' => $formOpen . '<input type="text" name="username" placeholder="username" required/><input type="submit" name="forgot" value="Reset"/>' . $formClose, 'Forgot Username' => $formOpen . '<input type="submit" name="forgot" value="Recover"/>' . $formClose);
+		return RadTabber::getHTML('reset', $tabs, false, array('height'=>'45px'));
 	}
 	
 	protected function getDataTable_register()

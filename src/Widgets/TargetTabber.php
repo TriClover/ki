@@ -18,7 +18,8 @@ class TargetTabber
 		$out = '<div class="ki_tabber" id="' . $name . '" style="width:' . $cssWidth . ';">';
 		foreach($contents as $tabName => $content)
 		{
-			$tabId = htmlspecialchars($name . '_' . $tabName);
+			$tabId = $name . '_' . $tabName;
+			$tabId = \preg_replace('/[^A-Za-z0-9\-\_]/', '', $tabId);
 			$out .= '<div id="' . $tabId . '"><a href="#' . $tabId . '">' . $tabName . '</a>'
 				. '<div style="height:' . $cssHeight . ';">' . $content . '</div></div>';
 		}

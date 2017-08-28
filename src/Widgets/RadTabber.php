@@ -20,6 +20,7 @@ class RadTabber extends Widget
 		$contentStyles = Widget::filterStyles($styles, $allowedStylesContent);
 		
 		$fw_class = in_array('width', array_keys($styles)) ? ' class="ki_rtabber_fullWidth"' : '';
+		if(in_array('height', array_keys($styles))) $mainStyles .= 'margin-bottom:' . $styles['height'];
 		$radClass = $tabAppearance ? '' : ' class="ki_rtabber_untab"';
 		
 		$out = '<div class="ki_rtabber" style="' . $mainStyles . '" id="' . $name . '">';
