@@ -12,463 +12,337 @@ use \mls\ki\Widgets\Menu;
 use \mls\ki\Widgets\MenuItem;
 use \mls\ki\Widgets\TargetTabber;
 use \mls\ki\Widgets\RadTabber;
+use \PHPMailer\PHPMailer\PHPMailer;
 
 class Authenticator
 {
 	//Shown for all signup attempts, successful or not
-	const msg_AccountReg = 'Request recieved - check your email';
+	const msg_AccountReg = 'Check your email for the link to finish creating your account.';
 	const msg_AccountVerifyInstruction = 'Finish creating your account by clicking the following link to verify your email address:';
 	//ensure that all auth related DB error messages are the same to avoid leaking state information
 	const msg_databaseError = 'Database error.';
+	const msg_maxAttemptsError = 'Too many attempts.';
+	const msg_userDisabledError = 'Your account is currently disabled and can only be re-enabled by staff.';
+	const msg_badCredsError = 'Invalid credentials.';
 	
 	//Instances of the User, Session, and Request classes describing the current request, populated by checkLogin
-	public static $user;
-	public static $session;
-	public static $request;
+	public static $user    = NULL;
+	public static $session = NULL;
+	public static $request = NULL;
 
 	/**
-	* Checks session status and fills the user/session globals with the info that pages need
-	* to check authorization and/or track the user.
-	* First, see if they provided a valid ID for an existing session.
-	* If username/password are given, process a user login attempt with them.
-	* If the user ends up not logged in, give them a new anonymous session.
-	* Also check session expiry, SID reissue threshold, account lockout, etc.
+	* Checks session status and fills the user/session/request globals with the info that pages need
+	* to check auth and/or track the user.
+	* Also check session expiry, SID reissue threshold, account lockout, etc., update last_active, and so on
 	*
 	* @param params Array of parameters to inject. See "Set defaults" section for valid keys
-	* @return string on failed login attempt using username/password, false on errors so serious even an anonymous session couldn't be attached, true otherwise.
+	* @return false on errors so serious even an anonymous session couldn't be attached, true otherwise.
 	*/
-	public function checkLogin(array $params = array())
+	public static function checkLogin(array $params = array())
 	{
 		//set defaults
 		//Priority: 1) Injected values 2) POST data by default names 3) hardcoded defaults signifying no action
 		$username = NULL;
 		$password = NULL;
 		$remember = true;
-		$logout = false;
-		if(isset($params['username'])) $username = $params['username']; elseif(isset($_POST['login_username'])) $username = $_POST['login_username'];
-		if(isset($params['password'])) $password = $params['password']; elseif(isset($_POST['login_password'])) $password = $_POST['login_password'];
-		if(isset($params['remember'])) $remember = $params['remember']; elseif(isset($_POST['login_remember'])) $remember = $_POST['login_remember'];
-		if(isset($params['logout'  ])) $logout   = $params['logout'  ]; elseif(isset($_POST['logout'        ])) $logout   = true;
+		$logout   = false;
+		$sid      = NULL;
+		if(isset($params['username'])) $username = $params['username']; elseif(isset($_POST['login_username']) && !empty($_POST['login_username'])) $username = $_POST['login_username'];
+		if(isset($params['password'])) $password = $params['password']; elseif(isset($_POST['login_password']) && !empty($_POST['login_password'])) $password = $_POST['login_password'];
+		if(isset($params['remember'])) $remember = $params['remember']; elseif(isset($_POST['login_remember']) && !empty($_POST['login_remember'])) $remember = $_POST['login_remember'];
+		if(isset($params['logout'  ])) $logout   = $params['logout'  ]; elseif(isset($_POST['logout'        ]) && !empty($_POST['logout'        ])) $logout   = true;
+		if(isset($params['sid'     ])) $sid      = $params['sid'     ]; elseif(isset($_COOKIE['id'          ]) && !empty($_COOKIE['id'          ])) $sid      = $_COOKIE['id'          ];
 		
-		//gather data
-		$db = \mls\ki\Database::db();
-		Authenticator::$request = new Request();
-		Authenticator::$request->fingerprint = Authenticator::generateFingerprint();
-		Authenticator::$request->ip = $_SERVER['REMOTE_ADDR'];
-		$pwWindowBegin = time() - (\mls\ki\Config::get()['limits']['passwordAttemptWindow_minutes']*60);
-		$pwMax = \mls\ki\Config::get()['limits']['maxPasswordAttempts'];
-		$accountsWindowBegin = time() - (\mls\ki\Config::get()['limits']['accountAttemptWindow_minutes']*60);
-		$accMax = \mls\ki\Config::get()['limits']['maxAccountAttempts'];
-		$tooManyLoginsMsg = 'Too many login attempts.';
-		
-		//set flags
+		//setup
+		$db = Database::db();
 		$db->connection->begin_transaction();
-		$ret = true;
-		$cookieParams = NULL;
-		$loggedABadAttempt = false;
+		$now = time();
 		
-		//Check current standing of requestor's IP
-		$ipData = $db->query('SELECT `id`,INET6_NTOA(`ip`) AS ip, UNIX_TIMESTAMP(`block_until`) AS block_until FROM ki_IPs WHERE `ip`=INET6_ATON(?) LIMIT 1',
-			array(Authenticator::$request->ip), 'checking IP status');
-		if($ipData === false) {$db->commit(); $db->autocommit(true); return false;}
-		if(empty($ipData)) //If IP is newly encountered, add it to the list
+		//config
+		$config = Config::get();
+		$pwWindowBegin       = $now - ($config['limits']['passwordAttemptWindow_minutes'] * 60);
+		$pwMax               =         $config['limits']['maxPasswordAttempts'          ];
+		$pwLockoutUntil      = $now + ($config['limits']['lockout_minutes'              ] * 60);
+		$accountsWindowBegin = $now - ($config['limits']['accountAttemptWindow_minutes' ] * 60);
+		$accMax              =         $config['limits']['maxAccountAttempts'           ];
+		$ipBlockUntil        = $now + ($config['limits']['ipBlock_minutes'              ] * 60);
+		
+		//gather HTTP request related data
+		$request = new Request();
+		if($request->ipId === NULL || $request->ipBlocked === NULL) {Session::deleteCookie(); $db->connection->commit(); $db->connection->autocommit(true); return false;}
+		
+		//check input: session ID
+		$providedSid = false;
+		$sidConfirmedBad = false;
+		$sidConfirmedGood = false;
+		$session = NULL;
+		if($sid !== NULL)
 		{
-			$ipIns = $db->query('INSERT INTO `ki_IPs` SET `ip`=INET6_ATON(?)', array(Authenticator::$request->ip), 'recording new IP');
-			if($ipIns !== 1) {$db->commit(); $db->autocommit(true); return false;}
-			$ipData = array('id' => $db->insert_id, 'ip' => Authenticator::$request->ip, 'block_until' => NULL);
-		}else{
-			$ipData = $ipData[0];
+			$providedSid = true;
+			$sessionAttempt = Session::load($sid, $request);
+			if($sessionAttempt === NULL)
+			{
+				$sidConfirmedBad = true;
+			}
+			elseif($sessionAttempt instanceof Session)
+			{
+				$sidConfirmedGood = true;
+				$session = $sessionAttempt;
+			}
 		}
-		$ipBlocked = $ipData['block_until'] !== NULL && $ipData['block_until'] > time();
+		
+		//check input: login attempt
+		$providedCreds = false;
+		$credsConfirmedGood = false;
+		$credsConfirmedBad = false;
+		$user = NULL;
+		if($username !== NULL && $password !== NULL)
+		{
+			$providedCreds = true;
+			$userAttempt = User::loadFromCreds($username, $password, $request);
+			if($userAttempt === NULL)
+			{
+				$credsConfirmedBad = true;
+			}
+			elseif($userAttempt instanceof User)
+			{
+				$credsConfirmedGood = true;
+				$user = $userAttempt;
+			}
+		}
 
-		//If a session ID was provided, check it
-		if(isset($_COOKIE['id']) && !empty($_COOKIE['id']))
+		//record failures that will apply toward limits, then apply limits if necessary
+		$badAccountsFromIp = 0;
+		if($sidConfirmedBad)
 		{
-			if(!$ipBlocked) //skip trying to lookup the session if IP is blocked
-			{
-				$sid = $_COOKIE['id'];
-				$sidHash = Authenticator::pHash($sid);
-				$session = $db->query('SELECT `id_hash`,`user`,UNIX_TIMESTAMP(`established`) AS established,UNIX_TIMESTAMP(`last_active`) AS last_active,`remember`,UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? AND `ip`=? AND `fingerprint`=? LIMIT 1',
-					array($sidHash, $ipData['id'], Authenticator::$request->fingerprint), 'looking up session requested by user');
-				if(is_array($session) && !empty($session)) //If SID is valid
-				{
-					$session = $session[0];
-					//if idle/abs timeout reached
-					if(time() >= Authenticator::sessionExpiry($session['established'], $session['remember'], $session['last_active']))
-					{
-						$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-							array($sidHash), 'cleaning up expired session');
-					}else{
-						if($session['user'] !== NULL)
-						{
-							$db->query('UPDATE `ki_users` SET `last_active`=NOW() WHERE `id`=?',
-								array($session['user']), 'udpating user last active');
-							$user = $db->query('SELECT `username`, `email`, `email_verified`, `password_hash`, `enabled`, UNIX_TIMESTAMP(`last_active`) AS last_active FROM `ki_users` WHERE `id`=? LIMIT 1',
-								array($session['user']), 'loading user for session');
-							if(is_array($user) && !empty($user))
-							{
-								$user = $user[0];
-								Authenticator::$user = new User($session['user'], $user['username'], $user['email'], $user['email_verified'], $user['password_hash'], $user['enabled'], $user['last_active']);
-							}
-						}
-						if(Authenticator::$user !== NULL && !Authenticator::$user->enabled)
-						{
-							Authenticator::$user = NULL;
-							$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-								array($sidHash), 'deleting session of disabled user');
-						}else{
-							$reissueSeconds = \mls\ki\Config::get()['sessions']['reissue_minutes']*60;
-							$reissueTime = $session['last_id_reissue'] + $reissueSeconds;
-							if($reissueTime <= time()) //if time for reissuing session id, do that while updating last active
-							{
-								$sidPair = Authenticator::generateSessionId();
-								$sid = $sidPair[0];
-								$sidHash = $sidPair[1];
-								$db->query('UPDATE `ki_sessions` SET `id_hash`=?,`last_active`=NOW(),`last_id_reissue`=NOW() WHERE `id_hash`=? LIMIT 1',
-									array($sidHash, $session['id_hash']), 'reissuing session ID and updating session last active');
-							}else{
-								$db->query('UPDATE `ki_sessions` SET `last_active`=NOW() WHERE `id_hash`=? LIMIT 1',
-									array($session['id_hash']), 'updating session last active');
-							}
-							$session = $db->query('SELECT `id_hash`,`user`,UNIX_TIMESTAMP(`established`) AS established,UNIX_TIMESTAMP(`last_active`) AS last_active,`remember`,UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-								array($sidHash), 'reloading session data after updating it');
-							if($session === false)
-							{
-								Authenticator::$user = NULL;
-							}else{
-								$session = $session[0];
-								Authenticator::$session = new Session($sid, $sidHash, Authenticator::$request->ip, Authenticator::$request->fingerprint, $session['established'], $session['last_active'], $session['remember'], $session['last_id_reissue']);
-								$cookieParams = array('id', $sid, Authenticator::sessionExpiry($session['established'], $session['remember'], $session['last_active']), '/', '', true, true);
-							}
-						}
-					}
-				}else{
-					//if the given sid was confirmed invalid (ie not returned as valid and there was no DB error)
-					if($session !== false)
-					{
-						$db->query('INSERT INTO ki_failedSessions SET `input`=?,`ip`=?,`when`=NOW()',
-							array($sid, $ipData['id']), 'logging invalid session attach attempt');
-						$loggedABadAttempt = true;
-					}
-				}
-			}
-		}
-		
-		//check for nonces
-		Log::trace('(checkLogin) Checking for special nonces...');
-		$providedNonce = NULL;
-		if(isset($_GET['ki_nonce']) && !empty($_GET['ki_nonce'])) $providedNonce = $_GET['ki_nonce'];
-		if(isset($_POST['ki_nonce']) && !empty($_POST['ki_nonce'])) $providedNonce = $_POST['ki_nonce'];
-		if($providedNonce !== NULL && !$ipBlocked)
-		{
-			Log::trace('(checkLogin) Nonce provided');
-			$nonce = $providedNonce;
-			$nonceHash = Authenticator::pHash($nonce);
-			
-			$nRes = $db->query('SELECT `ki_nonces`.`user` AS user,UNIX_TIMESTAMP(`ki_nonces`.`created`) AS created, `ki_users`.`username` AS name, `ki_nonces`.`purpose` AS purpose FROM `ki_nonces` LEFT JOIN `ki_users` ON `ki_nonces`.`user`=`ki_users`.`id` WHERE `nonce_hash`=? LIMIT 1',
-				array($nonceHash), 'checking for email verification nonce');
-			if($nRes !== false)
-			{
-				if(empty($nRes)) //Tried non-existent nonce. Count as bad session attach attempt.
-				{
-					$db->query('INSERT INTO ki_failedSessions SET `input`=?,`ip`=?,`when`=NOW()',
-						array($sid, $ipData['id']), 'logging invalid nonce');
-					$loggedABadAttempt = true;
-				}else{
-					Log::trace('(checkLogin) Nonce found in database');
-					$nonceCreated = $nRes[0]['created'];
-					$nonceUser = $nRes[0]['user'];
-					$nonceUsername = $nRes[0]['user'];
-					$purpose = $nRes[0]['purpose'];
-					$nonceExpires = $nonceCreated + (\mls\ki\Config::get()['limits']['nonceExpiry_hours'] * 60 * 60);
-					if($nonceExpires < time())
-					{
-						Log::trace('(checkLogin) Nonce expired');
-						Authenticator::$session->systemMessages[] = 'The email verification link you clicked was expired. '
-							. 'Try doing whatever you were doing again to get a new link. Do not click that same link again.';
-					}else{
-						Log::trace('(checkLogin) Nonce found to still be fresh');
-						if($purpose == 'email_verify')
-						{
-							Log::trace('(checkLogin) Nonce identified as email verification');
-							$db->query('UPDATE `ki_users` SET `email_verified`=1 WHERE `id`=? LIMIT 1',
-								array($nonceUser), 'setting email verification flag to TRUE for user');
-							Authenticator::$request->systemMessages[] = 'Email verified.';
-							//log in the user
-							$potentialCookie = Authenticator::loginUser($nonceUser, $remember);
-							if($potentialCookie !== NULL) $cookieParams = $potentialCookie;
-						}
-						elseif($purpose == 'reauth')
-						{
-							Log::trace('(checkLogin) Nonce identified as email reauth for password change');
-							Authenticator::$request->verifiedEmailForPasswordReset = $nonceUser;
-						}
-						elseif($purpose == 'passwordReset')
-						{
-							Log::trace('(checkLogin) Nonce identified as password change final step');
-							Authenticator::$request->verifiedPasswordResetFinal = $nonceUser;
-						}
-					}
-					$db->query('DELETE FROM `ki_nonces` WHERE `nonce_hash`=? LIMIT 1',
-						array($nonceHash), 'Deleting used nonce');
-				}
-			}
-		}
-		
-		//if user/pass provided for login attempt, and GIVEN user not already loaded via recognized session or nonce
-		if($username !== NULL && $password !== NULL && (Authenticator::$user === NULL || Authenticator::$user->username != $username))
-		{
-			if(Authenticator::$user !== NULL) //different user loaded
-			{
-				$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-					array(Authenticator::$session->id_hash), 'terminating session being replaced');
-				Authenticator::$session = NULL;
-				Authenticator::$user = NULL;
-			}
-			
-			$user = $db->query('SELECT `id`, `email`, `email_verified`, `password_hash`, `enabled`, UNIX_TIMESTAMP(`last_active`) AS last_active FROM `ki_users` WHERE `username`=? LIMIT 1',
-				array($username), 'getting user info for login attempt');
-			$badLogins = $db->query('SELECT COUNT(*) AS total FROM `ki_failedLogins` WHERE `inputUsername`=? AND `when`>FROM_UNIXTIME(?)',
-				array($username, $pwWindowBegin), 'checking total bad logins for account');
-			$lockedOut = false;
-			if($badLogins !== false && !empty($badLogins) && $badLogins[0]['total'] > $pwMax)
-			{
-				$lockedOut = true;
-			}
-
-			if($user === false)
-			{
-				$ret = \ki\security\Authenticator::msg_databaseError;
-			}
-			elseif($ipBlocked || $lockedOut)
-			{
-				$ret = $tooManyLoginsMsg;
-			}else{
-				if(!empty($user) && password_verify($password, $user[0]['password_hash']))
-				{
-					$user = $user[0];
-					if(!$user['enabled'])
-					{
-						$ret = 'Your account is currently disabled and can only be re-enabled by staff.';
-					}else{
-						if(!$user['email_verified'])
-						{
-							$idPair = Authenticator::generateNonceId();
-							$nid = $idPair[0];
-							$nidHash = $idPair[1];
-							$resNon = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="email_verify"',
-								array($nidHash, $user['id']), 'adding nonce for email verify on duplicate registration');
-							if($resNon !== false)
-							{
-								$mail = new \PHPMailer\PHPMailer\PHPMailer;
-								$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
-								$mail->FromName = $site . ' Account Management';
-								$mail->addAddress($user['email']);
-								$mail->Subject = $site . ' Account Creation';
-								$link = \mls\ki\Util::getUrl() . '?ki_nonce=' . $nid;
-								$mail->Body = Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
-								Mail::send($mail);
-								$ret = 'Check your email for instructions on finishing the creation of your account.';
-							}else{
-								$ret = 'Error generating nonce.';
-							}
-						}else{
-							$potentialCookie = Authenticator::loginUser($user['id'], $remember);
-							if($potentialCookie !== NULL) $cookieParams = $potentialCookie;
-						}
-					}
-				}else{
-					$ret = 'Invalid credentials.';
-					$db->query('INSERT INTO `ki_failedLogins` SET `inputUsername`=?,`ip`=?,`when`=NOW()',
-						array($username, $ipData['id']), 'logging bad login');
-					$loggedABadAttempt = true;
-				}
-			}
-		}
-		
-		//If there was any bad auth attempt, apply limits
-		if($loggedABadAttempt)
-		{
-			$badLogins = $db->query('SELECT COUNT(DISTINCT `inputUsername`) AS total FROM `ki_failedLogins` WHERE `ip`=? AND `when`>FROM_UNIXTIME(?)',
-				array($ipData['id'], $pwWindowBegin), 'checking total bad logins from IP');
+			$db->query('INSERT INTO `ki_failedSessions` SET `input`=?,`ip`=?,`when`=NOW()',
+				array($sid, $request->ipId), 'recording failed session attempt');
 			$badSessions = $db->query('SELECT COUNT(DISTINCT `input`) AS total FROM `ki_failedSessions` WHERE `ip`=? AND `when`>FROM_UNIXTIME(?)',
-				array($ipData['id'], $accountsWindowBegin), 'checking distinct bad session IDs from IP');
-			$badAccounts = 0;
-			if($badLogins !== false) $badAccounts += $badLogins[0]['total'];
-			if($badSessions !== false) $badAccounts += $badSessions[0]['total'];
-			if($badAccounts > $accMax)
-			{
-				$blockUntil = time() + (\mls\ki\Config::get()['limits']['ipBlock_minutes']*60);
-				$db->query('UPDATE `ki_IPs` SET `block_until`=FROM_UNIXTIME(?) WHERE `id`=?',
-					array($blockUntil, $ipData['id']), 'blocking IP');
-				$ret = ($username !== NULL) ? $tooManyLoginsMsg : true;
-				$ipBlocked = true;
-			}
+				array($request->ipId, $accountsWindowBegin), 'checking distinct bad session IDs from IP');
+			if($badSessions !== false) $badAccountsFromIp += $badSessions[0]['total'];
+		}
+		if($credsConfirmedBad)
+		{
+			$db->query('INSERT INTO `ki_failedLogins` SET `inputUsername`=?,`ip`=?,`when`=NOW()',
+				array($username, $request->ipId), 'recording failed session attempt');
+			$badLogins = $db->query('SELECT COUNT(DISTINCT `inputUsername`) AS total FROM `ki_failedLogins` WHERE `ip`=? AND `when`>FROM_UNIXTIME(?)',
+				array($request->ipId, $pwWindowBegin), 'checking total bad logins from IP');
+			if($badLogins !== false) $badAccountsFromIp += $badLogins[0]['total'];
+		}
+		if($badAccountsFromIp > $accMax)
+		{
+			$db->query('UPDATE `ki_IPs` SET `block_until`=FROM_UNIXTIME(?) WHERE `id`=?',
+				array($ipBlockUntil, $request->ipId), 'blocking IP');
+			$request->ipBlocked = true;
 		}
 		
-		if(($logout || $ipBlocked) && Authenticator::$session !== NULL)
+		$accountJustLocked = false;
+		$badLoginsForAccount = $db->query('SELECT COUNT(*) AS total FROM `ki_failedLogins` WHERE `inputUsername`=? AND `when`>FROM_UNIXTIME(?)',
+			array($username, $pwWindowBegin), 'checking total bad logins for account');
+		if($badLoginsForAccount !== false && !empty($badLoginsForAccount) && $badLoginsForAccount[0]['total'] > $pwMax)
 		{
-			$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-				array(Authenticator::$session->id_hash), 'logging out');
-			Authenticator::$session = NULL;
-			Authenticator::$user = NULL;
+			Log::trace('Locking out account');
+			$db->query('UPDATE `ki_users` SET `lockout_until`=FROM_UNIXTIME(?) WHERE `username`=? LIMIT 1',
+				array($pwLockoutUntil, $username), 'Locking out account for password attempts');
+			$accountJustLocked = true;
 		}
+		$accountLocked = $accountJustLocked || ($user !== NULL && $user->lockout_until !== NULL && $user->lockout_until >= $now);
 		
-		//If no session was attached, make a new one now
-		//If no user was loaded, make it an anonymous session
-		if(Authenticator::$session === NULL && !$ipBlocked)
+		//Decide what to do overall.
+		$ret = true;
+		if($request->ipBlocked)
 		{
-			$sidPair = Authenticator::generateSessionId();
-			$sid = $sidPair[0];
-			$sidHash = $sidPair[1];
-			$user = (Authenticator::$user === NULL) ? NULL : Authenticator::$user->id;
-			$sessionRemember = ($user === NULL) ? false : $remember;
-			$newRes = $db->query('INSERT INTO `ki_sessions` SET `id_hash`=?,`user`=?,`ip`=?,`fingerprint`=?,`established`=NOW(),`last_active`=NOW(),`remember`=?,`last_id_reissue`=NOW()',
-				array($sidHash, $user, $ipData['id'], Authenticator::$request->fingerprint, $sessionRemember), 'creating new session');
-			if($newRes !== 1)
-			{
-				$ret = false;
-			}else{
-				$session = $db->query('SELECT UNIX_TIMESTAMP(`established`) AS established, UNIX_TIMESTAMP(`last_active`) AS last_active, `remember`, UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-					array($sidHash), 'Getting time info from new session');
-				if($session !== false && is_array($session) && !empty($session))
-				{
-					$session = $session[0];
-					Authenticator::$session = new Session($sid, $sidHash, Authenticator::$request->ip, Authenticator::$request->fingerprint, $session['established'], $session['last_active'], $session['remember'], $session['last_id_reissue']);
-					$cookieParams = array('id', $sid, Authenticator::sessionExpiry($session['established'], $session['remember'], $session['last_active']), '/', '', true, true);
-				}
-			}
-		}
-		
-		if(Authenticator::$user !== NULL) //if logged in as a user, load their permissions
-		{
-			$perms = $db->query('SELECT `name` FROM `ki_permissions` WHERE `id` IN('
-				. 'SELECT `permission` FROM `ki_permissionsOfGroup` WHERE `group` IN('
-				. 'SELECT `group` FROM `ki_groupsOfUser` WHERE `user`=?))',
-				array(Authenticator::$user->id), 'getting permissions list');
-			if($perms !== false)
-			{
-				foreach($perms as $row)
-				{
-					Authenticator::$user->permissions[$row['name']] = true;
-				}
-			}
-		}
-		
-		if(Authenticator::$session !== NULL && $cookieParams !== NULL)
-		{
-			setcookie(...$cookieParams);
+			//Delete any existing session and leave the user without any session.
+			if($sidConfirmedGood) Authenticator::deleteSession($session->id_hash);
+			Session::deleteCookie();
+			$ret = false;
+			$request->systemMessages[] = Authenticator::msg_maxAttemptsError;
 		}else{
-			/*If we completely failed to give them even an anonymous session then at least blank the cookie
-			to prevent any previous cookie from generating bad session attach attempts */
-			setcookie('id', '', time()-86400, '/', '', true, true);
-			if($ret === true) $ret = false;
+			//check for email confirmation nonce
+			$providedNonce = false;
+			$nonce = NULL;
+			$nonceCarriesInstantLogin = false;
+			if(isset($_GET['ki_spn_ec']) && !empty($_GET['ki_spn_ec'])) $providedNonce = $_GET['ki_spn_ec'];
+			if(isset($_POST['ki_spn_ec']) && !empty($_POST['ki_spn_ec'])) $providedNonce = $_POST['ki_spn_ec'];
+			if($providedNonce !== false)
+			{
+				$nonce = Nonce::load($providedNonce, $request);
+				if($nonce instanceof Nonce && $nonce->purpose == 'email_verify')
+				{
+					$request->systemMessages[] = 'Email verified.';
+					$db->query('UPDATE `ki_users` SET `email_verified`=1 WHERE `id`=? LIMIT 1',
+						array($nonce->user), 'setting email verification flag to TRUE for user');
+					$nonceCarriesInstantLogin = true;
+				}else{
+					$request->systemMessages[] = $nonce;
+				}
+			}
+
+			//Process authentication related actions
+			if($logout)
+			{
+				//Delete any existing session and give the user a new anonymous session.
+				if($sidConfirmedGood) Authenticator::deleteSession($session->id_hash);
+				$ret = Authenticator::giveNewAnonymousSession($request);
+			}
+			elseif($nonceCarriesInstantLogin)
+			{
+				$newUser = User::loadFromId($nonce->user);
+				if(!$newUser->enabled)
+				{
+					$request->systemMessages[] = Authenticator::msg_userDisabledError;
+					if($sidConfirmedGood)
+					{
+						$session->attach();
+					}else{
+						$ret = Authenticator::giveNewAnonymousSession($request);
+					}
+				}else{
+					if($sidConfirmedGood)
+					{
+						if($session->user === NULL)
+						{
+							//promote existing anon session to user session
+							$newSession = $session->promoteAttach($nonce->user, $remember);
+							if($newSession === false)
+							{
+								//on failure to promote, just delete existing session and make new one
+								Authenticator::deleteSession($session->id_hash);
+								$newSession = Session::create($nonce->user, false, $request);
+								$newSession->attach();
+							}
+						}else{
+							//delete existing session and make new one
+							Authenticator::deleteSession($session->id_hash);
+							$newSession = Session::create($nonce->user, false, $request);
+							$newSession->attach();
+						}
+					}else{
+						//make new session
+						$newSession = Session::create($nonce->user, false, $request);
+						$newSession->attach();
+					}
+				}
+			}
+			elseif($accountLocked && $providedCreds)
+			{
+				$request->systemMessages[] = Authenticator::msg_maxAttemptsError;
+				if($sidConfirmedGood)
+				{
+					$session->attach();
+				}else{
+					$ret = Authenticator::giveNewAnonymousSession($request);
+				}
+			}
+			elseif($credsConfirmedGood)
+			{
+				//clear fail log
+				$db->query('DELETE FROM `ki_failedLogins` WHERE `inputUsername`=?', array($username),
+					'clearing user login fail log on succesful auth');
+
+				//if user account is not loginable, keep existing session (if no session or session expired make anon one)
+				if(!$user->enabled)
+				{
+					$request->systemMessages[] = Authenticator::msg_userDisabledError;
+					if($sidConfirmedGood)
+					{
+						$session->attach();
+					}else{
+						$ret = Authenticator::giveNewAnonymousSession($request);
+					}
+				}
+				elseif(!$user->email_verified)
+				{
+					//Resend email confirmation email for this user
+					$request->systemMessages[] = Authenticator::msg_AccountReg;
+					$user->sendEmailConfirmation();
+					if($sidConfirmedGood)
+					{
+						$session->attach();
+					}else{
+						$ret = Authenticator::giveNewAnonymousSession($request);
+					}
+				}else{
+					if($sidConfirmedGood)
+					{
+						if($session->user === NULL && !$session->expired)
+						{
+							//promote existing anon session to user session
+							$newSession = $session->promoteAttach($user->id, $remember);
+							if($newSession === false)
+							{
+								//on failure to promote, still attach existing session
+								$session->attach();
+								$request->systemMessages[] = Authenticator::msg_databaseError;
+							}
+						}else{
+							//destroy existing user-session and make new session for user
+							Authenticator::deleteSession($session->id_hash);
+							$newSession = Session::create($user->id, $remember, $request);
+							$newSession->attach();
+						}
+					}else{
+						//make new session for user
+						$newSession = Session::create($user->id, $remember, $request);
+						$newSession->attach();
+					}
+				}
+			}
+			elseif($sidConfirmedGood)
+			{
+				if(!$session->expired)
+				{
+					//Attach loaded session
+					$session->attach();
+				}else{
+					//Delete session and make new anonymous session
+					Authenticator::deleteSession($session->id_hash);
+					$ret = Authenticator::giveNewAnonymousSession($request);
+				}
+				if($credsConfirmedBad) $request->systemMessages[] = Authenticator::msg_badCredsError;
+			}else{
+				//last resort if no other conditions are met (probably first time visitor): make new anon session
+				$ret = Authenticator::giveNewAnonymousSession($request);
+				if($credsConfirmedBad) $request->systemMessages[] = Authenticator::msg_badCredsError;
+			}
 		}
+		
+		Authenticator::$request = $request;
 		
 		$db->connection->commit(); $db->connection->autocommit(true);
-		if(is_string($ret))
+		return $ret;
+	}
+	
+	/**
+	* Creates session in the database, creates the Session object,
+	* sets the global session to the object, sends the cookie for the session
+	* (deletes any session cookie on failure)
+	* @param the request to operate within
+	* @return boolean for success
+	*/
+	protected static function giveNewAnonymousSession(Request $requestContext)
+	{
+		$ret = true;
+		$newSession = Session::create(NULL, true, $requestContext);
+		if($newSession !== false)
 		{
-			Authenticator::$request->systemMessages[] = $ret;
-			return true;
+			$newSession->attach();
+		}else{
+			Session::deleteCookie();
+			$ret = false;
 		}
 		return $ret;
 	}
-
-	/**
-	* Logs in the user with the given ID.
-	* If there is already an active session, change it to be owned by that user.
-	* If there is no active session, do nothing session-related; the caller must create a new session.
-	* No security checks are performed here; do them before calling this function.
-	* @param id the user ID
-	* @param remember whether to enable "remember" feature on their session, only applicable if there is an existing session that this user will take over.
-	* @return the value to store in cookieParams, if any, otherwise NULL.
-	*/
-	private function loginUser($id, $remember)
-	{
-		$db = \mls\ki\Database::db();
-		$db->query('UPDATE `ki_users` SET `last_active`=NOW() WHERE `id`=? LIMIT 1',
-			array($id), 'updating user last active');
-		$user = $db->query('SELECT `id`, `username`, `email`, `email_verified`, `password_hash`, `enabled`, UNIX_TIMESTAMP(`last_active`) AS last_active FROM `ki_users` WHERE `id`=? LIMIT 1',
-			array($id), 'reloading user info afer updating it');
-		$user = $user[0];
-		$db->query('DELETE FROM `ki_failedLogins` WHERE `inputUsername`=?',
-			array($user['username']), 'resetting failed login count for username on successful login');
-		Authenticator::$user = new User($user['id'], $user['username'], $user['email'], $user['email_verified'], $user['password_hash'], $user['enabled'], $user['last_active']);
-		if(Authenticator::$session !== NULL)
-		{
-			//If there is an active session, the logged in user will take it over
-			//The session will get a new session ID to prevent privilege escalation attacks
-			$sidPair = Authenticator::generateSessionId();
-			$sid = $sidPair[0];
-			$sidHash = $sidPair[1];
-			$db->query('UPDATE `ki_sessions` SET `id_hash`=?,`user`=?,`last_active`=NOW(),`last_id_reissue`=NOW(),`remember`=? WHERE `id_hash`=? LIMIT 1',
-				array($sidHash, $user['id'], $remember, Authenticator::$session->id_hash), 'reissuing session ID and updating session last active');
-			$session = $db->query('SELECT `id_hash`,`user`,UNIX_TIMESTAMP(`established`) AS established,UNIX_TIMESTAMP(`last_active`) AS last_active,`remember`,UNIX_TIMESTAMP(`last_id_reissue`) AS last_id_reissue FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-				array($sidHash), 'reloading session data after updating it');
-			$session = $session[0];
-			Authenticator::$session = new Session($sid, $sidHash, Authenticator::$request->ip, Authenticator::$request->fingerprint, $session['established'], $session['last_active'], $session['remember'], $session['last_id_reissue']);
-			$cookieParams = array('id', $sid, Authenticator::sessionExpiry($session['established'], $session['remember'], $session['last_active']), '/', '', true, true);
-			return $cookieParams;
-		}
-		return NULL;
-	}
 	
 	/**
-	* Generates a new session ID; guaranteed to be unique
-	* because it checks against the database.
-	* Does not write anything to the database.
-	*
-	* @return an array($sessionID, $hashedSessionID)
+	* Deletes a session from the DB
+	* @param sidHash the sid_hash to look for
 	*/
-	public function generateSessionId()
-	{
-		return Authenticator::generateHashedId('session');
-	}
-
-	/**
-	* Generates a new nonce ID; guaranteed to be unique
-	* because it checks against the database.
-	* Does not write anything to the database.
-	*
-	* @return an array($sessionID, $hashedSessionID)
-	*/
-	public function generateNonceId()
-	{
-		return Authenticator::generateHashedId('nonce');
-	}
-	
-	/**
-	* Generates a new hashed ID for the specified table;
-	* guaranteed to be unique because it checks against the database.
-	* Does not write anything to the database.
-	*
-	* @param type the type of ID to generate. Valid values: session, nonce
-	* @return an array($sessionID, $hashedSessionID)
-	*/
-	public function generateHashedId(string $type='session')
+	protected static function deleteSession(string $sidHash)
 	{
 		$db = Database::db();
-		$sid = '';
-		$sid_hash = '';
-		$fieldname = 'id_hash';
-		if($type == 'nonce') $fieldname = 'nonce_hash';
-		do{
-			$sid = Util::random_str(32);
-			$sid_hash = Authenticator::pHash($sid);
-			$dups = $db->query('SELECT `' . $fieldname . '` FROM `ki_' . $type .'s` WHERE `' . $fieldname . '`=? LIMIT 1',
-				array($sid_hash), 'checking for duplicate ' . $type . ' ID hash');
-		}while(!empty($dups));
-		return array($sid, $sid_hash);	
-	}
-	
-	/*
-	* Fingerprint the client machine as well as can be done using only server side code.
-	* Sessions require this to be stable over their lifetime;
-	* if a user's fingerprint changes, the user gets logged out.
-	*/
-	public function generateFingerprint()
-	{
-		return $_SERVER['HTTP_USER_AGENT'];
+		$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+			array($sidHash), 'deleting session');
 	}
 	
 	/*
@@ -477,35 +351,10 @@ class Authenticator
 	* bcrypt-powered function instead. This function is for cases where that
 	* won't work well, such as hashing the session ID.
 	*/
-	public function pHash($input, $salt='dkljbhf3948go07hf7g578')
+	public static function pHash($input, $salt='dkljbhf3948go07hf7g578')
 	{
 		// output length 128
 		return hash_pbkdf2('whirlpool', $input, $salt, 1000);
-	}
-	
-	/**
-	* Calculates when a session will expire, assuming no more activity.
-	* Takes the sooner of the idle timeout and absolute timeout.
-	*
-	* @param established timestamp for beginning of session
-	* @param remember whether the session has Remember enabled
-	* @param last_active timstamp from which to calculate idle timeout. Leave NULL to use the current time; eg. when starting or refreshing a session. Specify a time to check whether an old session has expired or not without refreshing it.
-	* @return timestamp for when the session should expire
-	*/
-	public function sessionExpiry(string $established, bool $remember, int $last_active = NULL)
-	{
-		if($last_active === NULL) $last_active = time();
-		$config = \mls\ki\Config::get()['sessions'];
-		$idle_seconds = $config['remembered_timeout_idle_minutes'] * 60;
-		$absolute_seconds = $config['remembered_timeout_absolute_hours'] * 60 * 60;
-		if(!$remember)
-		{
-			$idle_seconds = $config['temp_timeout_idle_minutes'] * 60;
-			$absolute_seconds = $config['temp_timeout_absolute_hours'] * 60 * 60;
-		}
-		$idle = $last_active + $idle_seconds;
-		$absolute = $established + $absolute_seconds;
-		return min($idle, $absolute);
 	}
 	
 	/**
@@ -569,12 +418,22 @@ class Authenticator
 		Log::trace('Getting markup for password reset form');
 		$config = Config::get()['policies'];
 		$db = Database::db();
+		
+		$pwNonce = NULL;
+		if(isset($_GET['ki_spn_pw']))
+		{
+			$pwNonce = Nonce::load($_GET['ki_spn_pw']);
+		}
+		elseif(isset($_POST['ki_spn_pw'])){
+			$pwNonce = Nonce::load($_POST['ki_spn_pw']);
+		}
+
 		if(isset($_POST['forgot']) && isset($_POST['email']))
 		{
 			Log::trace('Processing initial password reset request');
 			$site = Config::get()['general']['sitename'];
 			$from = 'noreply@' . $_SERVER['SERVER_NAME'];
-			$mail = new \PHPMailer\PHPMailer\PHPMailer;
+			$mail = new PHPMailer;
 			$mail->From = $from;
 			$mail->FromName = $site . ' Account Maintenance';
 			$mail->addAddress($_POST['email']);
@@ -589,28 +448,18 @@ class Authenticator
 				{
 					$userid = $userData[0]['id'];
 					$emailVerified = $userData[0]['email_verified'];
-					$idPair = Authenticator::generateNonceId();
-					$nid = $idPair[0];
-					$nidHash = $idPair[1];
 					//if email not verified, send verification mail instead
 					if(!$emailVerified)
 					{
-						$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="email_verify"',
-								array($nidHash, $userid),
-								'adding nonce for email verify on attempted password reset without verified email');
-						if($nRes === false) return 'Database error.';
-						$link = Util::getUrl() . '?ki_nonce=' . $nid;
-						$mail->Subject = $site . ' Account Creation';
-						$mail->Body = Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
+						$userObj = User::loadFromId($userid);
+						$userObj->sendEmailConfirmation();
 					}else{
-						$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="reauth"',
-							array($nidHash, $userid), 'adding reauth nonce for password reset');
-						if($nRes === false) return 'Database error.';
-						$link = Util::getUrl() . '?ki_nonce=' . $nid . '#auth_ForgotUsernamePassword';
+						$pwNonce = Nonce::create('password_reset', $userid, false, false);
+						$link = Util::getUrl() . '?ki_spn_pw=' . $pwNonce->nonceValue . '#auth_ForgotUsernamePassword';
 						$mail->Subject = $site . ' Password Reset';
 						$mail->Body = 'Reset your password by following this link: ' . "\n" . $link;
+						Mail::send($mail);
 					}
-					Mail::send($mail);
 				}
 			}else{                        //username recovery
 				$userData = $db->query('SELECT `username` FROM `ki_users` WHERE `email`=?', array($_POST['email']),
@@ -627,50 +476,31 @@ class Authenticator
 			}
 			return 'Request recieved - check your email.<br/><div style="height:5px;">&nbsp;</div>';
 		}
-		elseif(Authenticator::$request->verifiedEmailForPasswordReset !== NULL) //Email reauthed, show new password form
+		elseif($pwNonce instanceof Nonce && $pwNonce->purpose == 'password_reset')
 		{
-			Log::trace('Processing email token for password reset request');
-			$idPair = Authenticator::generateNonceId();
-			$csrf = $idPair[0];
-			$hash = $idPair[1];
-			$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="passwordReset"',
-				array($hash, Authenticator::$request->verifiedEmailForPasswordReset),
-				'adding final step password reset nonce');
-			if($nRes === false) return 'Database error.';
-			$form = '<form method="post" id="ki_passwordResetter" action="' . $_SERVER['SCRIPT_NAME']
-				. '">Enter a new password here:<br/>'
-				. '<input type="hidden" name="ki_nonce" value="' . $csrf . '" />'
-				. '<input type="password" name="reset_password"         id="reset_password"         required placeholder="New password"         pattern="' . $config['passwordRegex'] . '" title="' . $config['passwordRegexDescription'] . '" />'
-				. '<input type="password" name="reset_password_confirm" id="reset_password_confirm" required placeholder="Confirm new password" pattern="' . $config['passwordRegex'] . '" title="' . $config['passwordRegexDescription'] . '" />'
-				. '<input type="submit" name="reset_password_submit" value="Submit"/>'
-				. '</form>';
-			$form .= '<script>
-					$("#ki_passwordResetter").submit(function(event)
-					{
-						if($("#reset_password").val() != $("#reset_password_confirm").val())
-						{
-							alert("Password and confirmation must match.");
-							return false;
-						}
-					});</script>';
-			return $form;
+			//Email reauthed, show new password form
+			return Authenticator::getPasswordResetStage2Form($pwNonce->user);
 		}
-		elseif(isset($_POST['reset_password']) && isset($_POST['reset_password_confirm']))
+		elseif(isset($_POST['reset_password']) &&
+		       isset($_POST['reset_password_confirm']) &&
+			   $pwNonce instanceof Nonce && $pwNonce->purpose == 'password_reset2')
 		{
 			Log::trace('Processing final step of password reset');
 			$preg_result = preg_match('/'.$config['passwordRegex'].'/',$_POST['reset_password']);
-			if(Authenticator::$request->verifiedPasswordResetFinal === NULL)
+			if($preg_result != 1)
 			{
-				Authenticator::$request->systemMessages[] = "Token invalid while entering new password. Try again.";
-			}elseif($preg_result != 1){
 				Authenticator::$request->systemMessages[] = "Password must match the pattern: " . $config['passwordRegexDescription'];
-			}elseif($_POST['reset_password'] != $_POST['reset_password_confirm']){
+				return Authenticator::getPasswordResetStage2Form($pwNonce->user);
+			}
+			elseif($_POST['reset_password'] != $_POST['reset_password_confirm'])
+			{
 				Authenticator::$request->systemMessages[] = 'Password and confirmation must match.';
+				return Authenticator::getPasswordResetStage2Form($pwNonce->user);
 			}else{
 				//turn the password into a hash before storing
 				$hash = \password_hash($_POST['reset_password'], PASSWORD_BCRYPT);
 				$db->query('UPDATE `ki_users` SET `password_hash`=? WHERE `id`=? LIMIT 1',
-					array($hash, Authenticator::$request->verifiedPasswordResetFinal),
+					array($hash, $pwNonce->user),
 					'changing user password from reset form');
 				return 'Password changed successfully. Try logging in with it now.';
 			}
@@ -682,12 +512,35 @@ class Authenticator
 		return RadTabber::getHTML('reset', $tabs, false, array('height'=>'45px'));
 	}
 	
-	protected function getDataTable_register()
+	protected static function getPasswordResetStage2Form(int $user)
+	{
+		$config = Config::get()['policies'];
+		$pwNonce = Nonce::create('password_reset2', $user, false, false);
+		$form = '<form method="post" id="ki_passwordResetter" action="' . $_SERVER['SCRIPT_NAME']
+			. '">Enter a new password here:<br/>'
+			. $pwNonce->getHTML('ki_spn_pw')
+			. '<input type="password" name="reset_password"         id="reset_password"         required placeholder="New password"         pattern="' . $config['passwordRegex'] . '" title="' . $config['passwordRegexDescription'] . '" />'
+			. '<input type="password" name="reset_password_confirm" id="reset_password_confirm" required placeholder="Confirm new password" pattern="' . $config['passwordRegex'] . '" title="' . $config['passwordRegexDescription'] . '" />'
+			. '<input type="submit" name="reset_password_submit" value="Submit"/>'
+			. '</form>';
+		$form .= '<script>
+				$("#ki_passwordResetter").submit(function(event)
+				{
+					if($("#reset_password").val() != $("#reset_password_confirm").val())
+					{
+						alert("Password and confirmation must match.");
+						return false;
+					}
+				});</script>';
+		return $form;
+	}
+	
+	protected static function getDataTable_register()
 	{
 		$reg_beforeAdd = function(&$row)
 		{
-			$db = \mls\ki\Database::db();
-			$site = \mls\ki\Config::get()['general']['sitename'];
+			$db = Database::db();
+			$site = Config::get()['general']['sitename'];
 			
 			//Checks for which the error can be shown on-page instead of via email because there is no security implication
 			if($row['password_hash'] != $_POST['confirmRegPassword'])
@@ -696,7 +549,7 @@ class Authenticator
 			}
 
 			//Only failure paths will result in a mail being sent but we can set one up here to avoid repetition
-			$mail = new \PHPMailer\PHPMailer\PHPMailer;
+			$mail = new PHPMailer;
 			$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
 			$mail->FromName = $site . ' Account Management';
 			$mail->addAddress($row['email']);
@@ -707,43 +560,32 @@ class Authenticator
 			//check for duplicate email: instead of letting the dataTable show duplicate error on mail field, abort.
 			$resMail = $db->query('SELECT `id`,`email_verified` FROM `ki_users` WHERE `email`=? LIMIT 1',
 				array($row['email']), 'Checking for duplicate email');
-			if($resMail === false) return \mls\ki\Security\Authenticator::msg_databaseError;
+			if($resMail === false) return Authenticator::msg_databaseError;
 			if(!empty($resMail))
 			{
-				$idPair = Authenticator::generateNonceId();
-				$nid = $idPair[0];
-				$nidHash = $idPair[1];
-
 				if($resMail[0]['email_verified'])
 				{
 					$mail->Subject = $site . ' Account Re-registration';
 					$mail->Body = 'It looks like you tried to register an account with this email address, but this email address is already associated with an account. If you are having trouble getting into your account, please use the "Forgot password/username?" feature on the site.';
 					Mail::send($mail);
 				}else{
-					$resNon = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="email_verify"',
-						array($nidHash, $resMail[0]['id']), 'adding nonce for email verify on duplicate registration');
-					if($resNon !== false)
-					{
-						$mail->Subject = $site . ' Account Creation';
-						$link = \mls\ki\Util::getUrl() . '?ki_nonce=' . $nid;
-						$mail->Body = \mls\ki\Security\Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
-						Mail::send($mail);
-					}
+					$dupUser = User::loadFromId($resMail[0]['id']);
+					$dupUser->sendEmailConfirmation();
 				}
-				return \mls\ki\Security\Authenticator::msg_AccountReg;
+				return Authenticator::msg_AccountReg;
 			}
 			
 			//check for duplicate username with same goals as above check for dup. email
 			$resUname = $db->query('SELECT `id` FROM `ki_users` WHERE `username`=? LIMIT 1',
 				array($row['username']), 'checking for duplicate username');
-			if($resUname === false) return \mls\ki\Security\Authenticator::msg_databaseError;
+			if($resUname === false) return Authenticator::msg_databaseError;
 			if(!empty($resUname))
 			{
 				$mail->Subject = $site . ' Account Creation';
 				$mail->Body = 'You tried to register an account with the username "' . $row['username']
 					. '", but that name is already taken. Please try another.';
 				Mail::send($mail);
-				return \mls\ki\Security\Authenticator::msg_AccountReg;
+				return Authenticator::msg_AccountReg;
 			}
 			
 			return true;
@@ -759,23 +601,8 @@ class Authenticator
 				array($userPKs['id']), 'getting ID of new user');
 			if($resUser !== false || !empty($resUser))
 			{
-				$mail = new \PHPMailer\PHPMailer\PHPMailer;
-				$mail->Subject = $site . ' Account Creation';
-				$mail->From = $from;
-				$mail->FromName = $site . ' Account Management';
-				$mail->addAddress($resUser[0]['email']);
-				
-				$idPair = \mls\ki\Security\Authenticator::generateNonceId();
-				$nid = $idPair[0];
-				$nidHash = $idPair[1];
-				$resNon = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?,`user`=?,`session`=NULL,`created`=NOW(),`purpose`="email_verify"',
-					array($nidHash, $userPKs['id']), 'adding nonce for email verify on new account');
-				if($resNon !== false)
-				{
-					$link = \mls\ki\Util::getUrl() . '?ki_nonce=' . $nid;
-					$mail->Body = \mls\ki\Security\Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
-					Mail::send($mail);
-				}
+				$newUser = User::loadFromId($userPKs['id']);
+				$newUser->sendEmailConfirmation();
 			}
 			return \mls\ki\Security\Authenticator::msg_AccountReg;
 		};
@@ -819,7 +646,7 @@ class Authenticator
 	/**
 	* @return a DataTable that provides an admin interface for editing users.
 	*/
-	public function getDataTable_editUsers()
+	public static function getDataTable_editUsers()
 	{
 		$userRow_hashPassword = function(&$row)
 		{

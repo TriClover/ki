@@ -76,9 +76,10 @@ reissue_minutes        = 60
 
 [limits]
 ;Max failed password attempts within the Window for one account from anywhere before lockout.
-;Attempt log cleared on successful login
+;Only consider attempts since last successful login
 maxPasswordAttempts           = 10
 passwordAttemptWindow_minutes = 15
+lockout_minutes               = 60
 
 ;Max number of accounts one IP can fail to login to before the IP is blocked.
 ;Attempt counter resets on successful login or after the Window
@@ -87,8 +88,9 @@ accountAttemptWindow_minutes = 60
 ipBlock_minutes              = 600
 
 ;Max lifetime of an unused nonce (used for email verification and csrf)
-;Nonce attempts count as session attempts and so are subject to the above lockout measures
 nonceExpiry_hours = 24
+maxNonceAttempts = 20
+nonceAttemptWindow_minutes = 20
 
 [policies]
 ;Password complexity requirements. Regex must be in html5 pattern form.

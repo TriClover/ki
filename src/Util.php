@@ -7,7 +7,7 @@ class Util
 	* Pagination function that determines the page numbers to link to
 	* given the current page and highest page number
 	*/
-	function pagesToShow($current, $last)
+	public static function pagesToShow($current, $last)
 	{
 		$pagesOnEnds = 3;
 		$pagesEachDirection = 2;
@@ -36,7 +36,7 @@ class Util
 	/**
 	* Convert any arbitrarily structured data to a string
 	*/
-	function toString($in, $html = false, $indentLevel = 0)
+	public static function toString($in, $html = false, $indentLevel = 0)
 	{
 		$out = '';
 		$indent = str_pad('', $indentLevel);
@@ -48,6 +48,7 @@ class Util
 			$indentNext = $indent . '&nbsp;';
 			$nl = '<br/>';
 		}
+		
 		if(is_array($in) || is_object($in))
 		{
 			$open  = '[';
@@ -68,7 +69,7 @@ class Util
 			$elements = array();
 			foreach($in as $key => $value)
 			{
-				$elements[] = $indentNext . $key . $map . toString($value, $html, $indentLevel+1);
+				$elements[] = $indentNext . $key . $map . Util::toString($value, $html, $indentLevel+1);
 			}
 			$out = $open . $nl . implode(','.$nl, $elements) . $nl . $indent . $close;
 		}else{

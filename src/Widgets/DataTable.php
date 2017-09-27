@@ -3,6 +3,7 @@ namespace mls\ki\Widgets;
 use \mls\ki;
 use \mls\ki\Database;
 use \mls\ki\Log;
+use \mls\ki\Util;
 
 /**
 * DataTable - generic data manipulation and reporting tool.
@@ -154,7 +155,7 @@ class DataTable
 			{
 				unset($this->fields[$fname]);
 				Log::warn('DataTable ' . $this->title . ' asked to show a field that is not in the table: ' . $fname);
-				Log::debug(\mls\ki\Util::toString($this->fields));
+				Log::debug(Util::toString($this->fields));
 			}else{
 				$this->fields[$fname]->constraints = $this->findConstraints($fname);
 				if($field->show) $this->allow_show = true;
@@ -1061,7 +1062,7 @@ HTML;
 	protected function pager($pages)
 	{
 		$out = '<div style="text-align:center;display:inline-block;">';
-		$pageList = \mls\ki\Util::pagesToShow($this->page,$pages);
+		$pageList = Util::pagesToShow($this->page,$pages);
 		$pageParam = $this->inPrefix . 'page';
 		
 		//first row: arrows and direct page input

@@ -30,20 +30,23 @@ class Database
 
 	/**
 	* Execute a query using a prepared statement with the given args.
-	* $purpose is used in log messages on error
+	* @param query the SQL query string to execute
+	* @param args the arguments to provide to the prepared statement object corresponding to $query
+	* @param purpose is used in the content of log messages on error
+	* @param failureLogLevel the level at which failures should be logged
 	* returns:
 	*	(for SELECT) the entire result set as an array of associative arrays
 	*	(for non-SELECT) the number of affected rows
 	*	or FALSE on failure
 	*/
-	public function query(string $query, array $args, string $purpose)
+	public function query(string $query, array $args, string $purpose, int $failureLogLevel = Log::ERROR)
 	{
 		$db = $this->connection;
 		//prepare query
 		$stmt = $db->prepare($query);
 		if($stmt === false)
 		{
-			Log::error('Query preparation failed - ' . $purpose);
+			Log::log($failureLogLevel, 'Query preparation failed - ' . $purpose);
 			return false;
 		}
 		
@@ -52,7 +55,7 @@ class Database
 		{
 			if(!$stmt->bind_param(str_repeat('s',count($args)), ...$args))
 			{
-				Log::error('Parameter binding failed - ' . $purpose . ': ' . $stmt->error);
+				Log::log($failureLogLevel, 'Parameter binding failed - ' . $purpose . ': ' . $stmt->error);
 				$stmt->close();
 				return false;
 			}
@@ -61,7 +64,7 @@ class Database
 		//execute
 		if(!$stmt->execute())
 		{
-			Log::error('Prepared statement execution failed - ' . $purpose . ': ' . $stmt->error);
+			Log::log($failureLogLevel, 'Prepared statement execution failed - ' . $purpose . ': ' . $stmt->error);
 			$stmt->close();
 			return false;
 		}
@@ -80,7 +83,7 @@ class Database
 		//handle errors in getting SELECT result
 		if($res === false)
 		{
-			Log::error('Getting result set handle for prepared statement failed - ' . $purpose . ': ' . $stmt->error);
+			Log::log($failureLogLevel, 'Getting result set handle for prepared statement failed - ' . $purpose . ': ' . $stmt->error);
 			$stmt->close();
 			return false;
 		}
