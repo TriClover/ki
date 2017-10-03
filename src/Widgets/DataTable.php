@@ -1,6 +1,5 @@
 <?php
 namespace mls\ki\Widgets;
-use \mls\ki;
 use \mls\ki\Database;
 use \mls\ki\Log;
 use \mls\ki\Util;
@@ -9,7 +8,7 @@ use \mls\ki\Util;
 * DataTable - generic data manipulation and reporting tool.
 * Editing only works when there is a primary key on the specified table(s)
 */
-class DataTable
+class DataTable extends Form
 {
 	//setup parameters
 	protected $title;            //title for this widget - needed to separate multiple DataTables on the same page

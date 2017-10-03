@@ -121,7 +121,7 @@ class Nonce
 			$ret->purpose             = $nRes['purpose'];
 			$ret->createdTimestamp    = $nRes['created'];
 			
-			if(isset(Nonce::$allValid[$nRes[$ret->purpose]]))
+			if(isset(Nonce::$allValid[$ret->purpose]))
 				Log::warn('Duplicate nonce purpose "' . $ret->purpose . '". Overwriting.');
 			Nonce::$allValid[$ret->purpose] = $ret;
 		}

@@ -92,7 +92,7 @@ class Session
 		if($this->user !== NULL)
 		{
 			$db->query('UPDATE `ki_users` SET `last_active`=NOW() WHERE `id`=? LIMIT 1',
-				array($userId), 'updating user last-active');
+				array($this->user), 'updating user last-active');
 		}
 		
 		Authenticator::$session = $this;

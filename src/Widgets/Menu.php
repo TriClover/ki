@@ -3,19 +3,30 @@ namespace mls\ki\Widgets;
 
 class Menu extends Widget
 {
-	public static function getHTML(string $button, array $items, array $styles = array())
+	protected $button = '';
+	protected $items  = array();
+	protected $styles = array();
+	
+	function __construct(string $button, array $items, array $styles = array())
+	{
+		$this->button = $button;
+		$this->items  = $items;
+		$this->styles = $styles;
+	}
+	
+	public function getHTML()
 	{
 		$allowedStylesMain = array('float', 'width');
 		$allowedStylesButton = array('height');
-		$mainStyles = Menu::filterStyles($styles, $allowedStylesMain);
-		$buttonStyles = Menu::filterStyles($styles, $allowedStylesButton);
+		$mainStyles = Widget::filterStyles($this->styles, $allowedStylesMain);
+		$buttonStyles = Widget::filterStyles($this->styles, $allowedStylesButton);
 		
 		$fromRight = mb_strpos('float:right;',$mainStyles) !== false;
 
 		$out = '<div tabindex="0" class="ki_menu" style="' . $mainStyles . '">'
-			. '<div style="' . $buttonStyles . '"><span>▼</span>' . $button . ' </div><ul style="'
+			. '<div style="' . $buttonStyles . '"><span>▼</span>' . $this->button . ' </div><ul style="'
 			. ($fromRight ? 'right:0;' : '') . '">';
-		foreach($items as $item)
+		foreach($this->items as $item)
 		{
 			if(!$item instanceof MenuItem) continue;
 			$out .= '<li>';
