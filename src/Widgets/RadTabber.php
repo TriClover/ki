@@ -26,7 +26,7 @@ class RadTabber extends Widget
 		$this->styles        = $styles;
 	}
 
-	public function getHTML()
+	protected function getHTMLInternal()
 	{
 		$allowedStylesMain = array('float', 'width', 'border');
 		$allowedStylesContent = array('height');

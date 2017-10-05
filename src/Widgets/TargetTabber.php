@@ -25,7 +25,7 @@ class TargetTabber extends Widget
 		$this->styles   = $styles;
 	}
 	
-	public function getHTML()
+	protected function getHTMLInternal()
 	{
 		$allowedStylesMain = array('width');
 		$allowedStylesContent = array('height');

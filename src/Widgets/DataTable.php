@@ -39,8 +39,6 @@ class DataTable extends Form
 	protected $page = 1;
 	
 	//state, internal
-	protected $printed       = false;   //The HTML has been generated. This helps detect improper usage
-	protected $handledParams = false;   //The HTTP params (get/post) have been handled. This prevents doing the DB operations multiple times.
 	protected $setupOK       = true;    //Whether the setup was successful. If false, no other features will try to do anything.
 	protected $outputMessage = array();
 	static $anyPrinted       = false;   //Whether any DataTable object has generated its HTML. Only the first one will contain stuff that only needs to be printed once.
@@ -48,6 +46,10 @@ class DataTable extends Form
 	//const
 	protected $textTypes = array('email', 'password', 'search', 'tel', 'text', 'url'); //html form types where attributes like "size" and "maxlength" are valid
 	
+	/**
+	* Set up the DataTable, doing all necessary validation on the configuration and
+	* translating it to a form easier for the internal code to use
+	*/
 	function __construct($title,
 	                     $table,                     //todo: support multiple
 	                     $fields            = array(),
@@ -110,7 +112,7 @@ class DataTable extends Form
 		{
 			Log::error('Getting schema info failed for dataTable ' . $this->title
 				. ' with error ' . $db->errno . ': ' . $db->error . ' -- ' . $query);
-			$setupOK = false;
+			$this->setupOK = false;
 			return;
 		}
 		while($row = $res->fetch_assoc())
@@ -232,21 +234,15 @@ class DataTable extends Form
 		}
 	}
 	
-	function getHTML()
+	/**
+	* @return the HTML for the entire DataTable; controls and output
+	*/
+	protected function getHTMLInternal()
 	{
 		Log::trace('Getting HTML for dataTable');
 		
 		//check preconditions
 		if(!$this->setupOK) return '';
-		if($this->printed)
-		{
-			Log::warn('Generated HTML for the same DataTable twice in one page load. This is bad for performance.');
-		}
-		$this->printed = true;
-		if(!$this->handledParams)
-		{
-			Log::warn('DataTable generating HTML without having handled params. This may cause usability issues.');
-		}
 		
 		//process state info
 		$limit_start = $this->rows_per_page * ($this->page-1);
@@ -508,8 +504,8 @@ HTML;
 	}
 	
 	/**
-	* Given a column name, returns an array of html5 validation constraints that apply to it
-	* including the type attribute
+	* @param col any column name
+	* @return an array of html5 validation constraints that apply to it including the type attribute
 	*/
 	protected function findConstraints($col)
 	{
@@ -561,7 +557,8 @@ HTML;
 	}
 	
 	/**
-	* Get constraints for column in HTML form ready to be inserted into an input
+	* @param col a column name
+	* @return constraints for column in HTML form ready to be inserted into an input
 	*/
 	protected function stringifyConstraints($col)
 	{
@@ -579,7 +576,7 @@ HTML;
 	* Handle HTTP params (GET, POST) and update the database if necessary
 	* @return boolean whether any items were successfully processed.
 	*/
-	function handleParams($post = NULL, $get = NULL)
+	protected function handleParamsInternal()
 	{
 		Log::trace('Handling params for DataTable ' . $this->title);
 		$db = Database::db()->connection;
@@ -587,20 +584,10 @@ HTML;
 		
 		//check preconditions
 		if(!$this->setupOK) return false;
-		if($this->handledParams)
-		{
-			Log::error('Tried to handle params for the same DataTable twice in one page load');
-			return false;
-		}
-		$this->handledParams = true;
-		if($this->printed)
-		{
-			Log::error('DataTable handling params after generating HTML, but getHtml assumes params have already been handled and probably showed wrong information');
-		}
 		
 		//interpret arguments
-		if($post === NULL) $post = $_POST;
-		if($get === NULL) $get = $_GET;
+		$post = $this->post;
+		$get  = $this->get;
 
 		//set state from params
 		if(isset($get[$this->inPrefix . 'page']) && empty($post))
@@ -1057,6 +1044,8 @@ HTML;
 	
 	/**
 	* Produce the html paging controls so the user can navigate the data
+	* @param pages The number of pages to generate for
+	* @return the paging controls as HTML
 	*/
 	protected function pager($pages)
 	{
@@ -1119,6 +1108,10 @@ HTML;
 	* 3. A string encoding the column name and the values of all the
 	*    primary-key-constituent columns in this row. This is essentially a
 	*    single serialized value for the PK even when the row has a compound PK
+	* @param colname The column name of the value that the input will be for
+	* @param row An associative array of all values in the corresponding row
+	* @param type The type of input; edit/add
+	* @return a string to use as the ID of the html input
 	*/
 	protected function inputId($colname, $row, $type='edit')
 	{
@@ -1136,7 +1129,10 @@ HTML;
 	}
 	
 	/**
-	* find out the real name of the column if what you have is an alias
+	* Find out the real name of the column if what you have is an alias
+	* Assumes the input is valid; invalid input will be returned unaltered
+	* @param col a "column name"; can be the real name or the given alias
+	* @return the real column name
 	*/
 	protected function realColName($col)
 	{
@@ -1148,7 +1144,8 @@ HTML;
 	}
 	
 	/**
-	* Translate mysql type to html input type
+	* @param type a MySQL field type
+	* @return the corresponding HTML input type
 	*/
 	protected function formType($type)
 	{

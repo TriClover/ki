@@ -10,11 +10,17 @@ use \mls\ki\Security\Request;
 use \mls\ki\Util;
 use \PHPMailer\PHPMailer\PHPMailer;
 
+/**
+* Provides password reset and username recovery
+*/
 class PasswordResetForm extends Form
 {
+	/** Processing code puts its result here for the benefit of the HTML generating code */
 	protected $response = NULL;
+	/** Processing code puts a userID here for response codes that require HTML generation to be user aware */
 	protected $user = NULL;
 	
+	//these are the possible values of $this->response
 	const resInitialForm     = 0;
 	const resError           = 1;
 	const resRequestRecieved = 2;
@@ -26,24 +32,30 @@ class PasswordResetForm extends Form
 		
 	}
 	
-	public function handleParams($post = NULL, $get = NULL)
+	/**
+	* Process input from throughout the available procedures, including:
+	* The initial request form, the nonce link that goes in an email, and the stage-2 form
+	*/
+	protected function handleParamsInternal()
 	{
 		Log::trace('Handling params for password reset form');
 		$config = Config::get()['policies'];
 		$db = Database::db();
+		$post = $this->post;
+		$get = $this->get;
 		
 		$this->response = PasswordResetForm::resInitialForm;
 		$pwNonce = NULL;
-		if(isset($_GET['ki_spn_pw']))
+		if(isset($get['ki_spn_pw']))
 		{
-			$pwNonce = Nonce::load($_GET['ki_spn_pw']);
+			$pwNonce = Nonce::load($get['ki_spn_pw']);
 		}
-		elseif(isset($_POST['ki_spn_pw']))
+		elseif(isset($post['ki_spn_pw']))
 		{
-			$pwNonce = Nonce::load($_POST['ki_spn_pw']);
+			$pwNonce = Nonce::load($post['ki_spn_pw']);
 		}
 
-		if(isset($_POST['forgot']) && isset($_POST['email']))
+		if(isset($post['forgot']) && isset($post['email']))
 		{
 			Log::trace('Processing initial password reset request');
 			$site = Config::get()['general']['sitename'];
@@ -51,12 +63,12 @@ class PasswordResetForm extends Form
 			$mail = new PHPMailer;
 			$mail->From = $from;
 			$mail->FromName = $site . ' Account Maintenance';
-			$mail->addAddress($_POST['email']);
+			$mail->addAddress($post['email']);
 			
-			if(isset($_POST['username'])) //password reset
+			if(isset($post['username'])) //password reset
 			{
 				$userData = $db->query('SELECT `id`,`email_verified` FROM `ki_users` WHERE `email`=? AND `username`=?',
-					array($_POST['email'], $_POST['username']),
+					array($post['email'], $post['username']),
 					'getting id of user');
 				if($userData === false)
 				{
@@ -83,7 +95,7 @@ class PasswordResetForm extends Form
 					$this->response = PasswordResetForm::resRequestRecieved;
 				}
 			}else{      //username recovery
-				$userData = $db->query('SELECT `username` FROM `ki_users` WHERE `email`=?', array($_POST['email']),
+				$userData = $db->query('SELECT `username` FROM `ki_users` WHERE `email`=?', array($post['email']),
 					'getting username for user with given email');
 				if($userData === false)
 				{
@@ -108,26 +120,26 @@ class PasswordResetForm extends Form
 			$this->response = PasswordResetForm::resStage2Form;
 			$this->user = $pwNonce->user;
 		}
-		elseif(isset($_POST['reset_password']) &&
-		       isset($_POST['reset_password_confirm']) &&
+		elseif(isset($post['reset_password']) &&
+		       isset($post['reset_password_confirm']) &&
 			   $pwNonce instanceof Nonce && $pwNonce->purpose == 'password_reset2')
 		{
 			Log::trace('Processing final step of password reset');
-			$preg_result = preg_match('/'.$config['passwordRegex'].'/',$_POST['reset_password']);
+			$preg_result = preg_match('/'.$config['passwordRegex'].'/',$post['reset_password']);
 			if($preg_result != 1)
 			{
 				Authenticator::$request->systemMessages[] = "Password must match the pattern: " . $config['passwordRegexDescription'];
 				$this->response = PasswordResetForm::resStage2Form;
 				$this->user = $pwNonce->user;
 			}
-			elseif($_POST['reset_password'] != $_POST['reset_password_confirm'])
+			elseif($post['reset_password'] != $post['reset_password_confirm'])
 			{
 				Authenticator::$request->systemMessages[] = 'Password and confirmation must match.';
 				$this->response = PasswordResetForm::resStage2Form;
 				$this->user = $pwNonce->user;
 			}else{
 				//turn the password into a hash before storing
-				$hash = \password_hash($_POST['reset_password'], PASSWORD_BCRYPT);
+				$hash = \password_hash($post['reset_password'], PASSWORD_BCRYPT);
 				$db->query('UPDATE `ki_users` SET `password_hash`=? WHERE `id`=? LIMIT 1',
 					array($hash, $pwNonce->user),
 					'changing user password from reset form');
@@ -136,7 +148,10 @@ class PasswordResetForm extends Form
 		}
 	}
 	
-	public function getHTML()
+	/**
+	* @return the HTML, depending on what state we're in as determined by the processing function.
+	*/
+	protected function getHTMLInternal()
 	{
 		Log::trace('Returning markup for initial password reset form');
 		$config = Config::get()['policies'];
@@ -163,6 +178,10 @@ class PasswordResetForm extends Form
 		return PasswordResetForm::getInitialForm();
 	}
 
+	/**
+	* This helper function encapsulates the "initial" form displayed before any input is recieved
+	* @return initial form HTML string
+	*/
 	protected static function getInitialForm()
 	{
 		$formOpen = '<form method="post" action="' . $_SERVER['SCRIPT_NAME'] . '"><input type="email" name="email" placeholder="email" style="clear:both;" required/>';
@@ -171,7 +190,12 @@ class PasswordResetForm extends Form
 		$forgotTabber = new RadTabber('reset', $tabs, false, array('height'=>'45px'));
 		return $forgotTabber->getHTML();
 	}
-	
+
+	/**
+	* This helper function encapsulates the "stage 2" form displayed after the user clicks a
+	* password reset nonce link in their email.
+	* @return stage 2 form HTML string
+	*/
 	protected static function getStage2Form(int $user)
 	{
 		$config = Config::get()['policies'];

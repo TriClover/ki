@@ -8,27 +8,46 @@ use \mls\ki\Security\User;
 use \mls\ki\Security\Request;
 use \PHPMailer\PHPMailer\PHPMailer;
 
+/**
+* Provides all of the authentication features in a very small screen footprint.
+* Allows non-authenticated users to login, create an account, reset password, and recover username.
+* Allows authenticated users to logout.
+*/
 class LoginForm extends Form
 {
 	protected $dataTable_register;
 	protected $pwForm;
 	
+	/**
+	* Sets up the constituent form objects for their separate handling.
+	*/
 	function __construct()
 	{
 		$this->dataTable_register = LoginForm::getDataTable_register();
 		$this->pwForm = new PasswordResetForm();
 	}
 	
-	public function handleParams($post = NULL, $get = NULL)
+	/**
+	* Process form input.
+	* Only the password reset + username recovery tab is a unique Form class.
+	* Account creation is a highly configured DataTable.
+	* The actual login form is just plain HTML with no processing code because
+	* its input is handled in the core authentication routine (Authenticator::checkLogin)
+	*/
+	protected function handleParamsInternal()
 	{
+		$post = $this->post;
+		$get = $this->get;
+		
 		$this->dataTable_register->handleParams($post, $get);
 		$this->pwForm->handleParams($post, $get);
 	}
 	
 	/**
-	* Get the HTML for the login form, and process requests from it except login
+	* Generate the HTML.
+	* @return HTML for the entire widget
 	*/
-	public function getHTML()
+	protected function getHTMLInternal()
 	{
 		$user = Authenticator::$user;
 		$request = Authenticator::$request;
@@ -78,6 +97,9 @@ class LoginForm extends Form
 		return $out;
 	}
 	
+	/**
+	* @return a DataTable configured for letting non-authenticated users create their own accounts
+	*/
 	protected static function getDataTable_register()
 	{
 		$reg_beforeAdd = function(&$row)
