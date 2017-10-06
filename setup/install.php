@@ -53,13 +53,16 @@ echo('<br/>');
 
 echo('Loading ki framework...<br/>');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/vendor/autoload.php');
-ki\init();
-use function \ki\database\query;
+use \mls\ki\Database;
+use \mls\ki\Config;
+use \mls\ki\Ki;
+Ki::init();
+$config = Config::get();
 echo('Framework loaded.<br/>');
 echo('<br/>');
 
 echo('Checking database:<br/>');
-$db = \ki\db();
+$db = Database::db();
 if($db === NULL)
 {
 	echo('Database connection not established. You may still need to create the database, or edit the config file to point to it. Aborting.');
@@ -67,7 +70,7 @@ if($db === NULL)
 }
 echo('Connected to database.<br/>');
 echo('Checking database server version...<br/>');
-$resVersion = query($db, 'SELECT version() AS version', array(), 'checking DB version');
+$resVersion = $db->query('SELECT version() AS version', array(), 'checking DB version');
 if($resVersion === false)
 {
 	echo('Error: failed to determine DBMS version. Aborting');
@@ -97,16 +100,15 @@ if($res === false || $res < 1)
 	exit;
 }
 $tables = $tables[1];
-$query = 'SELECT COUNT(*) FROM information_schema.`tables` WHERE `table_schema` = "'
-	. \ki\config()['db']['dbname'][0] . '" AND `table_name` IN("' . implode('","', $tables) . '")';
-$res = $db->query($query);
-$row = $res->fetch_array();
-if($row === false)
+$query = 'SELECT COUNT(*) AS tbls FROM information_schema.`tables` WHERE `table_schema` = "'
+	. $config['db']['dbname'][0] . '" AND `table_name` IN("' . implode('","', $tables) . '")';
+$res = $db->query($query, array(), 'checking DB against canonical schema');
+if($res === false || empty($res))
 {
 	echo('Error looking for tables in DB. Aborting.');
 	exit;
 }
-$tablecount = $row[0];
+$tablecount = $res[0]['tbls'];
 if($tablecount == count($tables))
 {
 	echo('All tables present.<br/>');
@@ -115,8 +117,9 @@ if($tablecount == count($tables))
 	exit;
 }else{
 	echo('Tables not installed yet. Installing now...<br/>');
-	$db->multi_query($schema);
-	while($db->more_results()) $db->next_result();
+	$dbc = $db->connection;
+	$dbc->multi_query($schema);
+	while($dbc->more_results()) $dbc->next_result();
 	echo('Tables installed!');
 }
 echo('<br/>');
