@@ -356,7 +356,7 @@ class Authenticator
 	/**
 	* @return a DataTable that provides an admin interface for editing users.
 	*/
-	public static function getDataTable_editUsers()
+	public static function getUserEditingForm()
 	{
 		$userRow_hashPassword = function(&$row)
 		{

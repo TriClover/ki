@@ -40,12 +40,22 @@ class User
 		$this->last_active    = $last_active;
 		$this->lockout_until  = $lockout_until;
 		
+		$rConfig = Config::get()['root'];
+		if($username == 'root' && !$rConfig['enable_root']) $this->enabled = false;
+
 		$db = Database::db();
-		
-		$perms = $db->query('SELECT `name` FROM `ki_permissions` WHERE `id` IN('
-				. 'SELECT `permission` FROM `ki_permissionsOfGroup` WHERE `group` IN('
-				. 'SELECT `group` FROM `ki_groupsOfUser` WHERE `user`=?))',
-				array($id), 'getting permissions of user');
+		$perms = false;
+		if($username != 'root')
+		{
+			
+			$perms = $db->query('SELECT `name` FROM `ki_permissions` WHERE `id` IN('
+					. 'SELECT `permission` FROM `ki_permissionsOfGroup` WHERE `group` IN('
+					. 'SELECT `group` FROM `ki_groupsOfUser` WHERE `user`=?))',
+					array($id), 'getting permissions of user');
+		}else{
+			$perms = $db->query('SELECT `name` FROM `ki_permissions`',
+					array(), 'getting all permissions');
+		}
 		if($perms !== false)
 		{
 			foreach($perms as $row)
@@ -86,7 +96,22 @@ class User
 		$user = $db->query('SELECT `id`,`email`,`email_verified`,`password_hash`,`enabled`,UNIX_TIMESTAMP(`last_active`) AS last_active,UNIX_TIMESTAMP(`lockout_until`) AS lockout_until FROM `ki_users` WHERE `username`=? LIMIT 1',
 			array($username), 'Checking for username');
 		if($user === false) return false;
-		if(empty($user) || !password_verify($password, $user[0]['password_hash'])) return NULL;
+
+		if(empty($user) || $username == 'root')
+		{
+			//do a dummy password verify to prevent username discovery via timing
+			password_verify($password, '$2y$10$0y05iFvBxofjmT553tTAeepX/1/tMilFfT/HrnlybDj5dedmq5izu');
+		}
+		if(empty($user)) return NULL;
+		if($username == 'root')
+		{
+			$rConfig = Config::get()['root'];
+			if($password != $rConfig['root_password']) return NULL;
+			if($requestContext->ipAddress != $rConfig['root_ip']) return NULL;
+		}else{
+			if(!password_verify($password, $user[0]['password_hash'])) return NULL;
+		}
+		
 		$user = $user[0];
 		$ret =  new User($user['id'],
 		                 $username,

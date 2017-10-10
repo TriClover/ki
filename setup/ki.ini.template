@@ -58,7 +58,7 @@ archivefile =
 regexRecipientWhitelist =
 
 [root]
-enable_root = 0
+enable_root = 1
 root_password = gjf348n340fj359h84g34f0h38409fj
 root_ip =
 

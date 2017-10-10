@@ -102,7 +102,7 @@ class Database
 		$dbobj = new \mysqli($host, $user, $password, $dbname);
 		if($dbobj->connect_errno)
 		{
-			\ki\Log::fatal('Failed to connect to MySQL DB `' . $dbname . '` on ' . $host
+			Log::fatal('Failed to connect to MySQL DB `' . $dbname . '` on ' . $host
 				. 'with error ' . $dbobj->connect_errno . ': ' . $dbobj->connect_error);
 			exit;
 		}
