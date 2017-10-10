@@ -11,6 +11,7 @@ use \PHPMailer\PHPMailer\PHPMailer;
 */
 class User
 {
+	//Database fields
 	public $id;
 	public $username;
 	public $email;
@@ -19,6 +20,9 @@ class User
 	public $enabled;
 	public $last_active;
 	public $lockout_until;
+	
+	//Derived fields
+	public $lockedOut;
 	
 	public $permissions = array();
 	
@@ -39,6 +43,8 @@ class User
 		$this->enabled        = $enabled;
 		$this->last_active    = $last_active;
 		$this->lockout_until  = $lockout_until;
+		
+		$this->lockedOut = $lockout_until >= time();
 		
 		$rConfig = Config::get()['root'];
 		if($username == 'root' && !$rConfig['enable_root']) $this->enabled = false;

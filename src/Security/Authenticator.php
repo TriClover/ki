@@ -149,7 +149,7 @@ class Authenticator
 		if($request->ipBlocked)
 		{
 			//Delete any existing session and leave the user without any session.
-			if($sidConfirmedGood) Authenticator::deleteSession($session->id_hash);
+			if($sidConfirmedGood) Session::deleteSession($session->id_hash);
 			Session::deleteCookie();
 			$ret = false;
 			$request->systemMessages[] = Authenticator::msg_maxAttemptsError;
@@ -178,7 +178,7 @@ class Authenticator
 			if($logout)
 			{
 				//Delete any existing session and give the user a new anonymous session.
-				if($sidConfirmedGood) Authenticator::deleteSession($session->id_hash);
+				if($sidConfirmedGood) Session::deleteSession($session->id_hash);
 				$ret = Authenticator::giveNewAnonymousSession($request);
 			}
 			elseif($nonceCarriesInstantLogin)
@@ -203,13 +203,13 @@ class Authenticator
 							if($newSession === false)
 							{
 								//on failure to promote, just delete existing session and make new one
-								Authenticator::deleteSession($session->id_hash);
+								Session::deleteSession($session->id_hash);
 								$newSession = Session::create($nonce->user, false, $request);
 								$newSession->attach();
 							}
 						}else{
 							//delete existing session and make new one
-							Authenticator::deleteSession($session->id_hash);
+							Session::deleteSession($session->id_hash);
 							$newSession = Session::create($nonce->user, false, $request);
 							$newSession->attach();
 						}
@@ -261,7 +261,7 @@ class Authenticator
 				}else{
 					if($sidConfirmedGood)
 					{
-						if($session->user === NULL && !$session->expired)
+						if($session->user === NULL)
 						{
 							//promote existing anon session to user session
 							$newSession = $session->promoteAttach($user->id, $remember);
@@ -273,7 +273,7 @@ class Authenticator
 							}
 						}else{
 							//destroy existing user-session and make new session for user
-							Authenticator::deleteSession($session->id_hash);
+							Session::deleteSession($session->id_hash);
 							$newSession = Session::create($user->id, $remember, $request);
 							$newSession->attach();
 						}
@@ -286,15 +286,7 @@ class Authenticator
 			}
 			elseif($sidConfirmedGood)
 			{
-				if(!$session->expired)
-				{
-					//Attach loaded session
-					$session->attach();
-				}else{
-					//Delete session and make new anonymous session
-					Authenticator::deleteSession($session->id_hash);
-					$ret = Authenticator::giveNewAnonymousSession($request);
-				}
+				$session->attach();
 				if($credsConfirmedBad) $request->systemMessages[] = Authenticator::msg_badCredsError;
 			}else{
 				//last resort if no other conditions are met (probably first time visitor): make new anon session
@@ -328,17 +320,6 @@ class Authenticator
 			$ret = false;
 		}
 		return $ret;
-	}
-	
-	/**
-	* Deletes a session from the DB
-	* @param sidHash the sid_hash to look for
-	*/
-	protected static function deleteSession(string $sidHash)
-	{
-		$db = Database::db();
-		$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
-			array($sidHash), 'deleting session');
 	}
 	
 	/*

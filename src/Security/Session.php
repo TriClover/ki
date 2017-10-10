@@ -171,7 +171,7 @@ class Session
 	* Attempt to load a session based on given (possibly suspect) Session ID
 	* @param sid Session ID to try
 	* @param requestContext a Request object representing the request within which to load the session
-	* @return a new Session object on success; FALSE on error, NULL when $sid not found.
+	* @return a new Session object on success; NULL when $sid not found, FALSE on error (ie subsystem error, or if the $sid was good but the session itself was bad e.g. expired, or belonging to a locked out user etc)
 	*/
 	public static function load($sid, $requestContext)
 	{
@@ -186,7 +186,21 @@ class Session
 		$sessionData = $sessionData[0];
 		$expiry = Session::calculateExpiryTime($sessionData['established'], $sessionData['remember'], $sessionData['last_active']);
 		$sidExpired = time() >= $expiry;
-		if($sessionData['user'] === NULL) $sidExpired = false; //anonymous sessions don't expire
+		$deleteThisSession = false;
+		if($sessionData['user'] === NULL)
+		{
+			$sidExpired = false; //anonymous sessions don't expire
+		}else{
+			//check if anything about the user prevents the session from being good
+			$user = User::loadFromId($sessionData['user']);
+			if(!$user->enabled || $user->lockedOut) $deleteThisSession = true;
+		}
+		if($sidExpired) $deleteThisSession = true;
+		if($deleteThisSession)
+		{
+			Session::deleteSession($sidHash);
+			return false;
+		}
 		$reissueTimestamp = Session::calculateReissueTime($sessionData['last_id_reissue']);
 		$needsReissue = time() >= $reissueTimestamp;
 		
@@ -285,6 +299,17 @@ class Session
 				array($sid_hash), 'checking for duplicate session ID hash');
 		}while(!empty($dups));
 		return array($sid, $sid_hash);
+	}
+	
+	/**
+	* Deletes a session from the DB
+	* @param sidHash the sid_hash to look for
+	*/
+	public static function deleteSession(string $sidHash)
+	{
+		$db = Database::db();
+		$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
+			array($sidHash), 'deleting session');
 	}
 }
 ?>
