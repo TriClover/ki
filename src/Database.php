@@ -4,10 +4,27 @@ namespace mls\ki;
 class Database
 {
 	public $connection = NULL;
+	public $host = NULL;
+	public $user = NULL;
+	public $password = NULL;
+	public $dbName = NULL;
 	
-	function __construct(\mysqli $connection)
+	function __construct(string $host, string $user, string $password, string $dbname)
 	{
-		$this->connection = $connection;
+		$this->host     = $host;
+		$this->user     = $user;
+		$this->password = $password;
+		$this->dbName   = $dbname;
+		
+		$dbobj = new \mysqli($host, $user, $password, $dbname);
+		if($dbobj->connect_errno)
+		{
+			Log::fatal('Failed to connect to MySQL DB `' . $dbname . '` on ' . $host
+				. 'with error ' . $dbobj->connect_errno . ': ' . $dbobj->connect_error);
+			exit;
+		}
+		$dbobj->set_charset('utf8mb4');
+		$this->connection = $dbobj;
 	}
 	
 	private static $all_connected = false;
@@ -18,14 +35,19 @@ class Database
 	* 1 arg  = return DB having the given title (or NULL if none)
 	* 2 args = add new DB with the given title
 	*/
-	public static function db($title = NULL, $connection = NULL)
+	public static function db($title = NULL, Database $dbObj = NULL)
 	{
-		if($connection === NULL && !Database::$all_connected) Database::connect_all();
+		if($dbObj === NULL && !Database::$all_connected) Database::connect_all();
 		static $all = array();
-		if($title === NULL) return array_key_exists(0,$all) ? new Database($all[0]) : NULL;
-		if($connection === NULL) return array_key_exists($title,$all) ? new Database($all[$title]) : NULL;
-		$all[] = $connection;
-		$all[$title] = $connection;
+		if($title === NULL) return array_key_exists(0,$all) ? $all[0] : NULL;
+		if($dbObj === NULL) return array_key_exists($title,$all) ? $all[$title] : NULL;
+		$all[] = $dbObj;
+		$all[$title] = $dbObj;
+	}
+	
+	public function connectionString()
+	{
+		return $this->user . ':' . $this->password . '@' . $this->host;
 	}
 
 	/**
@@ -93,21 +115,44 @@ class Database
 		$stmt->close();
 		return $data;
 	}
-
+	
 	/**
-	* Create mysqli object with the given credentials
+	* Execute a query using a prepared statement with the given args.
+	* @param script the SQL script contents to execute
+	* @param purpose is used in the content of log messages on error
+	* @param failureLogLevel the level at which failures should be logged
+	* @return an array of results, each result in the form returned by the query() function except that successful non-SELECT statements give TRUE rather than the number of affected rows.
 	*/
-	private static function connect($host, $user, $password, $dbname)
+	public function runScript(string $script, string $purpose, int $failureLogLevel = Log::ERROR)
 	{
-		$dbobj = new \mysqli($host, $user, $password, $dbname);
-		if($dbobj->connect_errno)
+		$db = $this->connection;
+		$db->multi_query($script);
+		$results = array();
+		while($db->more_results())
 		{
-			Log::fatal('Failed to connect to MySQL DB `' . $dbname . '` on ' . $host
-				. 'with error ' . $dbobj->connect_errno . ': ' . $dbobj->connect_error);
-			exit;
+			$loaded = $db->next_result();
+			if(!$loaded)
+			{
+				Log::log($failureLogLevel, 'Failed to load the result set for one of the statements in a script - ' . $purpose . ': ' . $db->error);
+				$results[] = false;
+				continue;
+			}
+			$res = $db->store_result();
+			if($res === false)
+			{
+				if($db->errno === 0)
+				{
+					$results[] = true;  //Successful non-SELECT statement
+				}else{
+					$results[] = false; //Failed statement
+					Log::log($failureLogLevel, 'Getting result set handle for one statement in a script failed - ' . $purpose . ': ' . $db->error);
+				}
+			}else{
+				$results[] = $res->fetch_all(MYSQLI_ASSOC); //Successful SELECT statement
+				$res->free();
+			}
 		}
-		$dbobj->set_charset('utf8mb4');
-		return $dbobj;
+		return $results;
 	}
 
 	/**
@@ -124,7 +169,7 @@ class Database
 			&& !is_array($config['db']['dbname']))
 		{
 			Database::db($config['db']['title'],
-				Database::connect($config['db']['host'],
+				new Database($config['db']['host'],
 					$config['db']['user'],
 					$config['db']['password'],
 					$config['db']['dbname']
@@ -139,7 +184,7 @@ class Database
 			for($i = 0; $i < count($config['db']['title']); ++$i)
 			{
 				Database::db($config['db']['title'][$i],
-					Database::connect($config['db']['host'][$i],
+					new Database($config['db']['host'][$i],
 						$config['db']['user'][$i],
 						$config['db']['password'][$i],
 						$config['db']['dbname'][$i]
@@ -148,6 +193,47 @@ class Database
 			}
 		}
 		Database::$all_connected = true;
+	}
+	
+	public function dropAllTables()
+	{
+		$script = <<<END_SCRIPT
+DROP PROCEDURE IF EXISTS `drop_all_tables`;
+
+CREATE PROCEDURE `drop_all_tables`()
+BEGIN
+    DECLARE _done INT DEFAULT FALSE;
+    DECLARE _tableName VARCHAR(255);
+    DECLARE _cursor CURSOR FOR
+        SELECT table_name 
+        FROM information_schema.TABLES
+        WHERE table_schema = SCHEMA();
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET _done = TRUE;
+
+    SET FOREIGN_KEY_CHECKS = 0;
+
+    OPEN _cursor;
+
+    REPEAT FETCH _cursor INTO _tableName;
+
+    IF NOT _done THEN
+        SET @stmt_sql = CONCAT('DROP TABLE ', _tableName);
+        PREPARE stmt1 FROM @stmt_sql;
+        EXECUTE stmt1;
+        DEALLOCATE PREPARE stmt1;
+    END IF;
+
+    UNTIL _done END REPEAT;
+
+    CLOSE _cursor;
+    SET FOREIGN_KEY_CHECKS = 1;
+END;
+
+call drop_all_tables(); 
+
+DROP PROCEDURE IF EXISTS `drop_all_tables`;
+END_SCRIPT;
+		return !in_array(false, $this->runScript($script, 'Dropping all tables'));
 	}
 }
 ?>

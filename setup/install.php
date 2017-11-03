@@ -7,7 +7,10 @@ $docRoot = $_SERVER['DOCUMENT_ROOT'];                            //where most op
 $liveConfigLocation = '../config/ki.ini';                        //Live config, where the application will look for it. Relative to docRoot
 $configTemplateLocation = 'vendor/mls/ki/setup/ki.ini.template'; //Config template, only this installer will need it. Relative to docRoot.
 $kiSchemaFileLocation = 'vendor/mls/ki/setup/schema.sql';        //schema SQL file with the framework tables
+$appSchemaFileLocation = '../config/schema.sql';                 //schema SQL file with the app tables
 $autoloaderLocAbsolute = $docRoot . '/vendor/autoload.php';      //Composer autoloader script
+$packageManager = 'yum';                                         //Yum
+$requiredMysqlUtilitiesVersion = '1.6.5';
 
 //possible icons: green check, red X, yellow warn, info, unknown (previous errors), locked (need login)
 
@@ -40,6 +43,46 @@ if(!empty($x_missing))
 }else{
 	echo('All required PHP extensions were found.<br/>');
 }
+echo('<br/>');
+
+echo('Checking version of mysql-utilities...<br/>');
+if($packageManager == 'yum')
+{
+	$foundGoodVer = false;
+	$cmdCheckVer = 'rpm -q mysql-utilities';
+	$outVer = array();
+	exec($cmdCheckVer, $outVer);
+	if(empty($outVer))
+	{
+		echo('mysql-utilities not found.');
+		exit;
+	}
+	foreach($outVer as $ver)
+	{
+		//version string form:
+		//mysql-utilities-1.6.5-1.el7.noarch
+		$start = mb_strlen('mysql-utilities-');
+		$ver = mb_substr($ver, $start);
+		$len = mb_strpos($ver, '-');
+		$ver = mb_substr($ver, 0, $len);
+		if(version_compare($ver, $requiredMysqlUtilitiesVersion, '>='))
+		{
+			$foundGoodVer = true;
+			break;
+		}
+	}
+	if(!$foundGoodVer)
+	{
+		echo('mysql-utilities is too out of date. Minimum version: ' . $requiredMysqlUtilitiesVersion);
+		exit;
+	}else{
+		echo('Sufficient version found.');
+	}
+}else{
+	echo('Unsupported package manager.');
+	exit;
+}
+
 echo('<br/>');
 
 echo('Checking for live configuration file...<br/>');
@@ -96,41 +139,96 @@ if(version_compare($dbVersion, $requiredDbVersion, '<'))
 }
 
 $schema = file_get_contents($kiSchemaFileLocation);
+$appSchema = file_get_contents($appSchemaFileLocation);
 if($schema === false)
 {
-	echo('Error: failed to load schema file. Aborting');
+	echo('Error: failed to load framework schema file. Aborting');
 	exit;
 }
-$tables = array();
-$res = preg_match_all('/CREATE TABLE \`(\w+)\` \(/', $schema, $tables);
-if($res === false || $res < 1)
+if($appSchema === false)
 {
-	echo('Error: unable to find table names in schema file. Aborting');
-	exit;
+	echo('Warning: failed to load app schema file. Continuing with only framework schema.');
 }
-$tables = $tables[1];
-$query = 'SELECT COUNT(*) AS tbls FROM information_schema.`tables` WHERE `table_schema` = "'
-	. $config['db']['dbname'][0] . '" AND `table_name` IN("' . implode('","', $tables) . '")';
-$res = $db->query($query, array(), 'checking DB against canonical schema');
-if($res === false || empty($res))
+$dbSchema = Database::db('schemaCompare');
+if(!$dbSchema->dropAllTables()) {echo('Error loading schema into temp comparison DB'); exit;}
+$res = $dbSchema->runScript($schema, 'Loading framework schema into temp comparison DB');
+$res2 = $dbSchema->runScript($appSchema, 'Loading app schema into temp comparison DB');
+if(in_array(false, $res)) {echo('Error loading schema into temp comparison DB'); exit;}
+if(in_array(false, $res2)) {echo('Error loading schema into temp comparison DB'); exit;}
+/* we use --skip-table-options to suppress AUTO_INCREMENT changes
+   but it also skips some useful changes like charset.
+   If mysqldbcompare ever lets you specify which table-options to check/skip, then change this.
+*/
+$cmdCompare = 'mysqldbcompare --server1=' . $db->connectionString() . ' ' . $db->dbName . ':' . $dbSchema->dbName . ' --skip-data-check --skip-row-count --skip-table-options --difftype=sql --run-all-tests --character-set=utf8mb4';
+$outCompare = array();
+exec($cmdCompare, $outCompare);
+$missingTables = array();
+$extraTables = array();
+$previousLine = '';
+foreach($outCompare as $key => $line) //remove spurious lines in the script
 {
-	echo('Error looking for tables in DB. Aborting.');
-	exit;
+	$line = preg_replace('/\s+/', ' ', $line);
+	//This is only needed because of a bug in mysqldbcompare; lines like this should be in a comment but aren't.
+	if(mb_strpos($line, 'pass SKIP SKIP') !== false)
+	{
+		unset($outCompare[$key]); 
+	}
+
+	//This is only needed because of a missing feature in mysqldbcompare; it should generate an appropriate CREATE/DROP TABLE statement instead of us having to detect a comment
+	if(substr($line, 0, 8) == '# TABLE:')
+	{
+		//detect if this is a missing or extra table
+		$liveNamePos = mb_strpos($previousLine, $db->dbName);
+		$compNamePos = mb_strpos($previousLine, $dbSchema->dbName);
+		$isMissing = $compNamePos < $liveNamePos;
+		if($isMissing)
+		{
+			$missingTables[] = substr($line, 9);
+		}else{
+			$extraTables[] = substr($line, 9);
+		}
+		unset($outCompare[$key]);
+	}
+	
+	//remove blank lines
+	if(empty($line)) unset($outCompare[$key]);
+	
+	//remove comments
+	if($line[0] == '#') unset($outCompare[$key]);
+	
+	$previousLine = $line;
 }
-$tablecount = $res[0]['tbls'];
-if($tablecount == count($tables))
+//grab the original CREATE TABLE statements from the script for tables noted as missing by mysqldbcompare
+$schemas = $schema . $appSchema;
+foreach($missingTables as $table)
 {
-	echo('All tables present.<br/>');
-}else if($tablecount > 0 && $tablecount != count($tables)){
-	echo('Error: schema partially installed. Fix the database manually before continuing.');
-	exit;
+	$matches = array();
+	$results = preg_match('/CREATE TABLE `' . $table . '`[^;]+;/', $schemas, $matches);
+	if($results>0)
+	{
+		$statement = $matches[0]."\n";
+		$outCompare[] = $statement;
+	}else{
+		echo('Error: table <tt>' . $table . '</tt> not found in the script it came from');
+		exit;
+	}
+}
+//generate DROP TABLE statements for tables noted as extraneous by mysqldbcompare
+foreach($extraTables as $table)
+{
+	$outCompare[] = 'DROP TABLE `' . $table . '`;';
+}
+
+if(!empty($outCompare))
+{
+	$outCompare = '<fieldset><legend>Changes to update live schema to current version</legend><pre>'
+		. implode("\n", $outCompare)
+		. '</pre></fieldset>';
+	echo($outCompare);
 }else{
-	echo('Tables not installed yet. Installing now...<br/>');
-	$dbc = $db->connection;
-	$dbc->multi_query($schema);
-	while($dbc->more_results()) $dbc->next_result();
-	echo('Tables installed!<br/>');
+	echo('Schema matches current version.');
 }
+echo('<br/>');
 
 echo('<br/>Checking root access...<br/>');
 if(empty($config['root']['root_ip']))

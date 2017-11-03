@@ -5,13 +5,14 @@ user[]     = web
 password[] = lgbjeo54v4bie0hn0g53gh49hg4gojsbgd
 dbname[]   = site1
 
-;for multiple DBs just pass the title into the db() function to get each one
+title[]    = schemaCompare
+host[]     = localhost
+user[]     = web
+password[] = lgbjeo54v4bie0hn0g53gh49hg4gojsbgd
+dbname[]   = ki_compare
+
+;for extra DBs just pass the title into the db() function to get each one
 ;or call with no args to get the first one (the framework will do just that)
-;title[]    = extra
-;host[]     = localhost
-;user[]     = web
-;password[] = lgbjeo54v4bie0hn0g53gh49hg4gojsbgd
-;dbname[]   = forum
 
 [log]
 ;destination - file:filename, user (browser), mail:address, table:dbtitle.tablename, syslog, php (follows php.ini), sapi (apache)

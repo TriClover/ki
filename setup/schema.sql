@@ -1,3 +1,5 @@
+ALTER DATABASE COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE `ki_IPs` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `ip` varbinary(16) NOT NULL,
@@ -58,7 +60,6 @@ CREATE TABLE `ki_users` (
   UNIQUE KEY `email_UNIQUE` (`email`)
 ) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
 CREATE TABLE `ki_groupsOfUser` (
   `user` int(11) NOT NULL,
   `group` int(11) NOT NULL,
@@ -67,22 +68,6 @@ CREATE TABLE `ki_groupsOfUser` (
   CONSTRAINT `gou_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `gou_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `ki_nonces` (
-  `nonce_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `user` int(11) DEFAULT NULL,
-  `session` char(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `requireUser` tinyint(1) NOT NULL,
-  `requireSession` tinyint(1) NOT NULL,
-  `purpose` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `created` datetime NOT NULL,
-  PRIMARY KEY (`nonce_hash`),
-  KEY `nonces_user_users_id_idx` (`user`),
-  KEY `nonces_ss_sss_idh_idx` (`session`),
-  CONSTRAINT `nonces_ss_sss_idh` FOREIGN KEY (`session`) REFERENCES `ki_sessions` (`id_hash`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `nonces_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 
 CREATE TABLE `ki_permissions` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -115,4 +100,19 @@ CREATE TABLE `ki_sessions` (
   KEY `fk_sessions_ip_ips_id_idx` (`ip`),
   CONSTRAINT `fk_sessions_ip_ips_id` FOREIGN KEY (`ip`) REFERENCES `ki_IPs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_sessions_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_nonces` (
+  `nonce_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user` int(11) DEFAULT NULL,
+  `session` char(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `requireUser` tinyint(1) NOT NULL,
+  `requireSession` tinyint(1) NOT NULL,
+  `purpose` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created` datetime NOT NULL,
+  PRIMARY KEY (`nonce_hash`),
+  KEY `nonces_user_users_id_idx` (`user`),
+  KEY `nonces_ss_sss_idh_idx` (`session`),
+  CONSTRAINT `nonces_ss_sss_idh` FOREIGN KEY (`session`) REFERENCES `ki_sessions` (`id_hash`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `nonces_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
