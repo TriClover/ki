@@ -188,6 +188,7 @@ foreach($outCompare as $key => $line) //remove spurious lines in the script
 			$extraTables[] = substr($line, 9);
 		}
 		unset($outCompare[$key]);
+		continue; //avoid setting this as the "previous line" since the missing/extra tables are grouped
 	}
 	
 	//remove blank lines
