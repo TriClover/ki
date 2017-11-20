@@ -112,6 +112,11 @@ class Util
 	{
 		return (string)$needle === mb_substr($haystack, -mb_strlen($needle));
 	}
+	
+	function contains($haystack, $needle)
+	{
+		return strpos($haystack, $needle) !== false;
+	}
 
 	/*
 	* Cryptographically-secure random string with a specified length in characters

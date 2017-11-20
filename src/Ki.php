@@ -3,8 +3,10 @@ namespace mls\ki;
 
 class Ki
 {
-	public static function init()
+	public static $siteName = NULL;
+	public static function init(string $siteName)
 	{
+		Ki::$siteName = $siteName;
 		\ini_set("default_charset", "UTF-8");
 		\mb_internal_encoding("UTF-8");
 		\mb_http_output('UTF-8');

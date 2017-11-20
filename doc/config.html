@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+ <head>
+  <title>ki config file documentation</title>
+  <style>table{background-color:#111;}td,th{background-color:#FFF;}</style>
+ </head>
+ <body>
+  <table>
+   <tr>
+    <th>Category</th>
+	<th>Name</th>
+	<th>Default</th>
+	<th>Info</th>
+   </tr>
+   <tr>
+    <td>Database</td>
+	<td>(Name given to each connection object)</td>
+	<td>main</td>
+	<td>
+	 The framework requires two databases, named "main" and "schemaCompare".<br/>
+     Other databases can be added for use by the application.
+	</td>
+   </tr>
+   
+   <tr>
+    <td rowspan="3">Logging</td>
+	<td>destination</td>
+	<td>&nbsp;</td>
+	<td>
+	 file:filename, user (browser), mail:address, table:dbtitle.tablename, syslog, php (follows php.ini), sapi (apache)<br/>
+	 log tables must have the fields in schema_example_logTable.sql
+	</td>
+   </tr>
+   <tr>
+    <td>format</td>
+	<td>&nbsp;</td>
+	<td>plain, json, html</td>
+   </tr>
+   <tr>
+    <td>threshold</td>
+	<td>&nbsp;</td>
+	<td>minimum ordered level that will be logged. Can be number or NONE, SYSTEMIC, FATAL, ERROR, WARN, INFO, DEBUG, TRACE, ALL</td>
+   </tr>
+  
+   <tr>
+    <td rowspan="4">General</td>
+	<td>sitename</td>
+	<td>site1</td>
+	<td>
+	 The site name you add here is the "friendly name" by which the site will identify itself to users.<br/>
+     Not to be confused with the sitename you pass into the init/setup functions which is only used to find the config file.
+	</td>
+   </tr>
+   <tr>
+    <td>componentsFilePath</td>
+	<td>static/components</td>
+	<td>
+     File path where you configured the composer component installer to put components<br/>
+     If blank, the default is a "components" folder in DOCUMENT_ROOT, which is where they will be if you didn't specify the location to Composer either, and ran Composer in DOCUMENT_ROOT.<br/>
+     Relative paths are relative to DOCUMENT_ROOT, but you can also use an absolute path.<br/>
+    </td>
+   </tr>
+   <tr>
+    <td>componentsUrl</td>
+	<td>&nbsp;</td>
+	<td>
+     URL to get to the components folder. You can probably leave this blank unless you put them on a separate vhost.<br/>
+     This must be either blank, an absolute path (eg. "/components") or a full URL (eg. "http://static.example.com/")<br/>
+     If blank, defaults as follows:<br/>
+     If componentsFilePath is also blank, use "/components"<br/>
+     If componentsFilePath is relative, use "/" followed by the componentsFilePath<br/>
+     If componentsFilePath is absolute and starts with the DOCUMENT_ROOT, use componentsFilePath minus the DOCUMENT_ROOT<br/>
+     If componentsFilePath is absolute and doesn't start with the DOCUMENT_ROOT, fall back to "/components"<br/>
+    </td>
+   </tr>
+   <tr>
+    <td>environment</td>
+	<td>local</td>
+	<td>
+	 if environment is anything other than blank, it will show the non-production environment indicators
+	</td>
+   </tr>
+   
+   <tr>
+    <td rowspan="4">Mail</td>
+	<td>send</td>
+	<td>0</td>
+	<td>Values: 0/1 -- enable/disable actual sending. Either way, any specified logging will still work.</td>
+   </tr>
+   <tr>
+    <td>loglevel</td>
+	<td>INFO</td>
+	<td>log the fact that a mail was sent (with To/Subject) with standard loggers</td>
+   </tr>
+   <tr>
+    <td>archivefile</td>
+	<td>&nbsp;</td>
+	<td>save the full contents of all mails sent to the given file</td>
+   </tr>
+   <tr>
+    <td>regexRecipientWhitelist</td>
+	<td>&nbsp;</td>
+	<td>If non-blank, the To address must match this regex or mail will not be sent</td>
+   </tr>
+   
+   <tr>
+    <td rowspan="5">Sessions</td>
+	<td>remembered_timeout_idle_minutes</td>
+	<td>20160</td>
+	<td rowspan="2">When user clicks "remember me" while logging in</td>
+   </tr>
+   <tr>
+    <td>remembered_timeout_absolute_hours</td>
+	<td>4320</td>
+   </tr>
+   <tr>
+    <td>temp_timeout_idle_minutes</td>
+	<td>30</td>
+	<td rowspan="2">When user doesn't click "remember me" on login</td>
+   </tr>
+   <tr>
+    <td>temp_timeout_absolute_hours</td>
+	<td>12</td>
+   </tr>
+   <tr>
+    <td>reissue_minutes</td>
+	<td>60</td>
+	<td>How often to cycle IDs</td>
+   </tr>
+   
+   <tr>
+    <td rowspan="9">Limits</td>
+	<td>maxPasswordAttempts</td>
+	<td>10</td>
+	<td rowspan="3">
+	 Max failed password attempts within the Window for one account from anywhere before lockout.<br/>
+	 Only consider attempts since last successful login
+    </td>
+   </tr>
+   <tr>
+    <td>passwordAttemptWindow_minutes</td>
+	<td>15</td>
+   </tr>
+   <tr>
+    <td>lockout_minutes</td>
+	<td>60</td>
+   </tr>
+   <tr>
+    <td>maxAccountAttempts</td>
+	<td>5</td>
+	<td rowspan="3">
+	 Max number of accounts one IP can fail to login to before the IP is blocked.<br/>
+	 Attempt counter resets on successful login or after the Window
+    </td>
+   </tr>
+   <tr>
+    <td>accountAttemptWindow_minutes</td>
+	<td>60</td>
+   </tr>
+   <tr>
+    <td>ipBlock_minutes</td>
+	<td>600</td>
+   </tr>
+   <tr>
+    <td>nonceExpiry_hours</td>
+	<td>24</td>
+	<td rowspan="3">Max lifetime of an unused nonce (used for email verification and csrf)</td>
+   </tr>
+   <tr>
+    <td>maxNonceAttempts</td>
+	<td>20</td>
+   </tr>
+   <tr>
+    <td>nonceAttemptWindow_minutes</td>
+	<td>20</td>
+   </tr>
+   
+   <tr>
+    <td rowspan="2">Policies</td>
+	<td>passwordRegex</td>
+	<td>(?=^.{8,}$)(?=.*\d)(?=.*\W)(?=.*[A-Z])(?=.*[a-z]).*$</td>
+	<td>Password complexity requirements. Regex must be in html5 pattern form.</td>
+   </tr>
+   <tr>
+    <td>passwordRegexDescription</td>
+	<td>Must include uppercase, lowercase, digit, and special character. Minimum length 8</td>
+	<td>&nbsp;</td>
+   </tr>
+  </table>
+ </body>
+</html>

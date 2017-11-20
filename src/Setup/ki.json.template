@@ -1,0 +1,64 @@
+{
+    "db": {
+        "main": {
+            "host": "localhost",
+            "user": "web",
+            "password": "lgbjeo54v4bie0hn0g53gh49hg4gojsbgd",
+            "dbname": "site1"
+        },
+        "schemaCompare": {
+            "host": "localhost",
+            "user": "web",
+            "password": "lgbjeo54v4bie0hn0g53gh49hg4gojsbgd",
+            "dbname": "ki_compare"
+        }
+    },
+    "log": {
+        "main": {
+            "destination": "sapi",
+            "format": "plain",
+            "threshold": "ERROR",
+            "namedlevels": ""
+        }
+    },
+    "general": {
+        "sitename": "site1",
+        "timezone": "America/Detroit",
+        "componentsFilePath": "/var/www/site1/webroot/static/components",
+        "componentsUrl": "/static/components",
+        "environment": "local"
+    },
+    "mail": {
+        "send": "0",
+        "loglevel": "INFO",
+        "archivefile": "",
+        "regexRecipientWhitelist": ""
+    },
+    "root": {
+        "enable_root": "1",
+        "root_password": "",
+        "root_ip": "192.168.102.2"
+    },
+    "sessions": {
+        "remembered_timeout_idle_minutes": "20160",
+        "remembered_timeout_absolute_hours": "4320",
+        "temp_timeout_idle_minutes": "30",
+        "temp_timeout_absolute_hours": "12",
+        "reissue_minutes": "60"
+    },
+    "limits": {
+        "maxPasswordAttempts": "10",
+        "passwordAttemptWindow_minutes": "15",
+        "lockout_minutes": "60",
+        "maxAccountAttempts": "5",
+        "accountAttemptWindow_minutes": "60",
+        "ipBlock_minutes": "600",
+        "nonceExpiry_hours": "24",
+        "maxNonceAttempts": "20",
+        "nonceAttemptWindow_minutes": "20"
+    },
+    "policies": {
+        "passwordRegex": "(?=^.{8,}$)(?=.*\\d)(?=.*\\W)(?=.*[A-Z])(?=.*[a-z]).*$",
+        "passwordRegexDescription": "Must include uppercase, lowercase, digit, and special character. Minimum length 8"
+    }
+}

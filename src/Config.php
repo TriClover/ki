@@ -4,42 +4,54 @@ namespace mls\ki;
 class Config
 {
 	protected static $conf = NULL;
-	protected static $iniFile = NULL;
 	protected static $path = NULL;
 	
 	public static function get()
 	{
 		if(Config::$path === NULL)
 		{
-			Config::$path = $_SERVER['DOCUMENT_ROOT'] . '/../config/ki.ini';
+			Config::$path = $_SERVER['DOCUMENT_ROOT'] . '/../config/' . Ki::$siteName . '.json';
 		}
 		if(Config::$conf === NULL)
 		{
 			Config::$conf = array();
-			Config::$iniFile = file_get_contents(Config::$path);
-			Config::$conf = parse_ini_string(Config::$iniFile, true, INI_SCANNER_RAW);
+			$fileContents = file_get_contents(Config::$path);
+			Config::$conf = json_decode($fileContents, true, 512, JSON_BIGINT_AS_STRING|JSON_OBJECT_AS_ARRAY);
 			Config::$conf = Config::processDefaults(Config::$conf);
 		}
 		return Config::$conf;
 	}
 	
-	public static function set(string $section, string $key, string $value)
+	public static function set(array $keys, string $value)
 	{
-		if(Config::$conf === NULL
-			|| empty(Config::$conf)
-			|| !isset(Config::$conf[$section])
-			|| empty(Config::$conf[$section])
-			|| !isset(Config::$conf[$section][$key]))
+		if(Config::$conf === NULL) return false;
+		
+		$references = [&Config::$conf];
+		for($i=0; $i<count($keys); ++$i)
 		{
-			return false;
+			$key = $keys[$i];
+			if(!is_array($references[$i]) || !isset($references[$i][$key])) return false;
+			$references[$i+1] =& $references[$i][$key];
 		}
-		//(the section header and everything before it + all lines in the same section (key value pairs, comments, or blank lines) up to the one being changed) the line being changed (everything after the line being changed)
-		$pattern = '/([\s\S]*\[' . $section . '\][\r\n]+(?:(?:\w+\h*=\h*\S*|\;[\S\h]*)[\r\n]+)*)' . $key . '\h*=[\S\h]*([\s\S]*)/i';
-		$replacement = '$1' . $key . '=' . $value . '$2';
-		Config::$iniFile = preg_replace($pattern, $replacement, Config::$iniFile);
-		file_put_contents(Config::$path, Config::$iniFile);
-		Config::$conf = NULL;
-		Config::get();
+		$references[count($references)-1] = $value;
+		$reRes = Config::rewrite();
+		
+		if($reRes === false) return false;
+		return true;
+	}
+	
+	public static function rewrite(array $newConf = NULL)
+	{
+		if($newConf === NULL)
+		{
+			$newConf = Config::$conf;
+		}else{
+			Config::$conf = $newConf;
+		}
+		$json = json_encode($newConf, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+		$bytes = file_put_contents(Config::$path, $json);
+		
+		if($bytes === false) return false;
 		return true;
 	}
 

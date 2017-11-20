@@ -39,9 +39,8 @@ class Database
 	{
 		if($dbObj === NULL && !Database::$all_connected) Database::connect_all();
 		static $all = array();
-		if($title === NULL) return array_key_exists(0,$all) ? $all[0] : NULL;
+		if($title === NULL) return array_key_exists('main',$all) ? $all['main'] : NULL;
 		if($dbObj === NULL) return array_key_exists($title,$all) ? $all[$title] : NULL;
-		$all[] = $dbObj;
 		$all[$title] = $dbObj;
 	}
 	
@@ -126,7 +125,12 @@ class Database
 	public function runScript(string $script, string $purpose, int $failureLogLevel = Log::ERROR)
 	{
 		$db = $this->connection;
-		$db->multi_query($script);
+		$res = $db->multi_query($script);
+		if($res === false)
+		{
+			Log::log($failureLogLevel, 'Failed to run script - ' . $purpose . ': ' . $db->error);
+			return [false];
+		}
 		$results = array();
 		while($db->more_results())
 		{
@@ -162,35 +166,9 @@ class Database
 	private static function connect_all($config = NULL)
 	{
 		if($config === NULL) $config = Config::get();
-		if(!is_array($config['db']['title'])
-			&& !is_array($config['db']['host'])
-			&& !is_array($config['db']['user'])
-			&& !is_array($config['db']['password'])
-			&& !is_array($config['db']['dbname']))
+		foreach($config['db'] as $title => $conf)
 		{
-			Database::db($config['db']['title'],
-				new Database($config['db']['host'],
-					$config['db']['user'],
-					$config['db']['password'],
-					$config['db']['dbname']
-				)
-			);
-		}elseif(is_array($config['db']['title'])
-			&& is_array($config['db']['host'])
-			&& is_array($config['db']['user'])
-			&& is_array($config['db']['password'])
-			&& is_array($config['db']['dbname']))
-		{
-			for($i = 0; $i < count($config['db']['title']); ++$i)
-			{
-				Database::db($config['db']['title'][$i],
-					new Database($config['db']['host'][$i],
-						$config['db']['user'][$i],
-						$config['db']['password'][$i],
-						$config['db']['dbname'][$i]
-					)
-				);
-			}
+			Database::db($title, new Database($conf['host'], $conf['user'], $conf['password'], $conf['dbname']));
 		}
 		Database::$all_connected = true;
 	}

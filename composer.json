@@ -15,16 +15,16 @@
 	"extra": {
 		"component": {
 			"scripts": [
-				"setup/static/ki.js",
-				"setup/static/webshim/polyfiller.js"
+				"static/ki.js",
+				"static/webshim/polyfiller.js"
 			],
 			"styles": [
-				"setup/static/ki.css"
+				"static/ki.css"
 			],
 			"files": [
-				"setup/static/webshim/shims/*",
-				"setup/static/webshim/shims/*/*",
-				"setup/static/webshim/shims/*/*/*"
+				"static/webshim/shims/*",
+				"static/webshim/shims/*/*",
+				"static/webshim/shims/*/*/*"
 			],
 			"name": "ki"
 		}

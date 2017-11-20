@@ -203,44 +203,44 @@ class Log
 		$setupErrors = array();
 		$setupWarns = array();
 		
-		foreach(Config::get()['log']['destination'] as $index => $val)
+		foreach(Config::get()['log'] as $name => $logger)
 		{
 			//load config into destination objects
 			$dest = new LogDestination();
-			$colon = strpos($val, ':');
+			$colon = strpos($logger['destination'], ':');
 			if($colon === false)
 			{
-				$dest->type = $val;
+				$dest->type = $logger['destination'];
 			}else{
-				$dest->type = substr($val,0,$colon);
-				$dest->address = substr($val,$colon+1);
+				$dest->type = substr($logger['destination'],0,$colon);
+				$dest->address = substr($logger['destination'],$colon+1);
 			}
 			if(!in_array($dest->type, array('file','user','mail','table','syslog','php','sapi')))
 			{
-				$setupErrors[] = 'Unrecognized log destination: ' . $val;
+				$setupErrors[] = 'Unrecognized log destination: ' . $logger['destination'];
 				continue;
 			}
-			$dest->format = Config::get()['log']['format'][$index];
+			$dest->format = $logger['format'];
 			if(!in_array($dest->format, array('plain','json','html')))
 			{
 				$dest->format = 'plain';
-				$setupWarns[] = 'Unrecognized log format: ' . $dest->format . ' for destination: ' . $val . ' (defaulting to plain)';
+				$setupWarns[] = 'Unrecognized log format: ' . $dest->format . ' for logger: ' . $name . ' (defaulting to plain)';
 			}
 
-			$inThreshold = Config::get()['log']['threshold'][$index];
+			$inThreshold = $logger['threshold'];
 			if(!is_numeric($inThreshold))
 			{
 				$convert = constant('\mls\ki\Log::' . $inThreshold);
 				if($convert === NULL)
 				{
-					$setupWarns[] = 'Unrecognized log threshold: ' . $inThreshold . ' for destination: ' . $val . ' (defaulting to ERROR)';
+					$setupWarns[] = 'Unrecognized log threshold: ' . $inThreshold . ' for logger: ' . $name . ' (defaulting to ERROR)';
 					$inThreshold = Log::ERROR;
 				}else{
 					$inThreshold = $convert;
 				}
 			}
 			$dest->threshold = $inThreshold;
-			$dest->namedLevels = explode(',', Config::get()['log']['namedlevels'][$index]);
+			$dest->namedLevels = explode(',', $logger['namedlevels']);
 			
 			//check that the specified resources, if any, are valid
 			if($dest->type == 'mail')
