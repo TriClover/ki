@@ -14,10 +14,7 @@ class Setup extends Form
 	private $moduleNames = array();   //Names of SetupModule implementations to use, in order.
 	private $responses = array();     //return codes from getHTML() for each module
 	private $handlingErrors = array();//Contains strings if there were errors so serious no modules could be processed.
-	
-	// I/O objects for this setup, set after the related modules run
 	public $siteName = NULL;
-	public $db = NULL;
 	
 	/**
 	* Initialize the setup.
@@ -32,7 +29,10 @@ class Setup extends Form
 			'\mls\ki\Setup\SmPackages',
 			'\mls\ki\Setup\SmCreateConfig',
 			'\mls\ki\Setup\SmAuth',
-			'\mls\ki\Setup\SmDatabase');
+			'\mls\ki\Setup\SmDatabase',
+			'\mls\ki\Setup\SmDatabaseVersion',
+			'\mls\ki\Setup\SmDatabaseSchema',
+			'\mls\ki\Setup\SmDatabaseData');
 		$this->moduleNames = array_merge($ki_mods, $modules);
 		foreach($this->moduleNames as $mn)
 		{
@@ -88,14 +88,6 @@ class Setup extends Form
 	*/
 	protected function handleParamsInternal()
 	{
-		$docRoot = $_SERVER['DOCUMENT_ROOT'];
-		$chdRes = chdir($docRoot);
-		if($chdRes === false)
-		{
-			$this->handlingErrors[] = "Couldn't chdir";
-			return;
-		}
-		
 		foreach($this->moduleNames as $mn)
 		{
 			$this->responses[$mn] = $this->modules[$mn]->handleParams();

@@ -11,8 +11,8 @@ class SmCreateConfig extends SetupModule
 	
 	protected function handleParamsInternal()
 	{
-		$liveConfigLocation = '../config/' . $this->setup->siteName . '.json'; //Live config, where the application will look for it. Relative to docRoot
-		$configTemplateLocation = 'vendor/mls/ki/src/Setup/ki.json.template'; //Config template, only this installer will need it. Relative to docRoot.
+		$liveConfigLocation = $_SERVER['DOCUMENT_ROOT'] . '/../config/' . $this->setup->siteName . '.json';
+		$configTemplateLocation = dirname(__FILE__) . '/ki.json.template';
 	
 		if(!file_exists($liveConfigLocation))
 		{

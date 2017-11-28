@@ -13,7 +13,7 @@ class SmAuth extends SetupModule
 	protected function handleParamsInternal()
 	{
 		$config = Config::get();
-		$liveConfigLocation = '../config/' . $this->setup->siteName . '.json'; //Live config, where the application will look for it. Relative to docRoot
+		$liveConfigLocation = $_SERVER['DOCUMENT_ROOT'] . '/../config/' . $this->setup->siteName . '.json';
 
 		if(empty($config['root']['enable_root']) || !$config['root']['enable_root'])
 		{
@@ -44,7 +44,7 @@ class SmAuth extends SetupModule
 		session_start();
 		if($_SESSION['setupAuth'] !== 1)
 		{
-			$passwordForm = '<form method="post"><input type="password" name="password" placeholder="password" required /><input type="submit"/></form>';
+			$passwordForm = '<form method="post"><input type="password" name="password" placeholder="password" required /><input type="submit" value="Login"/></form>';
 			if(!empty($_POST['password']))
 			{
 				if($config['root']['root_password'] == $_POST['password'])
@@ -55,7 +55,9 @@ class SmAuth extends SetupModule
 					return SetupModule::FAILURE;
 				}
 			}else{
-				$this->msg = 'Enter the root password to continue setup.<br/>' . $passwordForm;
+				$this->msg = 'Enter the root password to continue setup.<br/>'
+					. 'It can be found at ' . $liveConfigLocation . '<br/>'
+					. $passwordForm;
 				return SetupModule::FAILURE;
 			}
 		}

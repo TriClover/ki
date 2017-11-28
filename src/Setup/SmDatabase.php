@@ -2,25 +2,18 @@
 namespace mls\ki\Setup;
 use \mls\ki\Config;
 use \mls\ki\Database;
-use \mls\ki\Ki;
-use \mls\ki\Util;
 
 class SmDatabase extends SetupModule
 {
 	protected $msg = '';
 	protected $showForm = false;
 	
-	public function getFriendlyName() { return 'Database'; }
+	public function getFriendlyName() { return 'Database Connection'; }
 	
 	protected function handleParamsInternal()
 	{
-		$requiredDbVersion = '10.0.12';                               //MariaDB minimum acceptable version
-		$kiSchemaFileLocation = 'vendor/mls/ki/src/Setup/schema.sql'; //schema SQL file with the framework tables
-		$appSchemaFileLocation = '../config/schema.sql';              //schema SQL file with the app tables
-		$retVal = SetupModule::SUCCESS;
-		$this->msg = '';
+		$requiredDbVersion = '10.0.12'; //MariaDB minimum acceptable version
 		$config = Config::get();
-		$delayedFail = false; //set true if a failure was encountered but we still want to run the rest of the checks instead of bailing completely.
 		
 		//process changes to config
 		if(!empty($_POST['dbsubmit'])
@@ -91,88 +84,9 @@ class SmDatabase extends SetupModule
 			$this->showForm = true;
 			return SetupModule::FAILURE;
 		}
-		//check MariaDB version
-		$resVersion = $db->query('SELECT version() AS version', array(), 'checking DB version');
-		$resVersionSC = $dbSchema->query('SELECT version() AS version', array(), 'checking DB version');
-		if($resVersion === false || $resVersionSC === false)
-		{
-			$this->msg = 'Failed to determine DBMS version.';
-			return SetupModule::FAILURE;
-		}
-		$dbVersion = $resVersion[0]['version'];
-		$dbVersionSC = $resVersionSC[0]['version'];
-		if(version_compare($dbVersion, $requiredDbVersion, '<') || version_compare($dbVersionSC, $requiredDbVersion, '<'))
-		{
-			$this->msg = 'Insufficient MariaDB version. Requires at least <tt>' . $requiredDbVersion
-				. '</tt>. Found <tt>' . $dbVersion . '</tt> and <tt>' . $dbVersionSC . '</tt>.';
-			return SetupModule::FAILURE;
-		}
-		//load schema definition
-		$schema = file_get_contents($kiSchemaFileLocation);
-		$appSchema = file_get_contents($appSchemaFileLocation);
-		if($schema === false)
-		{
-			$this->msg = 'Failed to load framework schema file.';
-			return SetupModule::FAILURE;
-		}
-		if($appSchema === false)
-		{
-			$this->msg = 'Failed to load app schema file. Continuing with only framework schema.';
-			$retVal = SetupModule::WARNING;
-		}
-		if(!$dbSchema->dropAllTables()) {$this->msg = 'Error loading schema into temp comparison DB'; return SetupModule::FAILURE;}
-		$res = $dbSchema->runScript($schema, 'Loading framework schema into temp comparison DB');
-		$res2 = $dbSchema->runScript($appSchema, 'Loading app schema into temp comparison DB');
-		if(in_array(false, $res)) {$this->msg = 'Error loading framework schema into temp comparison DB'; return SetupModule::FAILURE;}
-		if(in_array(false, $res2))
-		{
-			$this->msg = 'App schema script did not run. Ignore if the app has no tables outside the framework.';
-			$retVal = SetupModule::WARNING;
-		}
 
-		//Compare main DB to reference and generate update sql
-		$outCompare = SmDatabase::generateDiffSQL($db, $dbSchema, $schema, $appSchema);
-		if(!is_array($outCompare)) {$this->msg = $outCompare; return SetupModule::FAILURE;}
-		if(!empty($outCompare) && !empty($_POST['runsql']))
-		{
-			$constructedScript = implode("\n",$outCompare);
-			$res = $db->runScript($constructedScript, 'Running update script from diff on main DB');
-			if(in_array(false, $res) || empty($res))
-			{
-				$this->msg = 'Error running update script from diff on main DB - Try running it manually.<br/>';
-				$delayedFail = true;
-			}
-			$outCompare = SmDatabase::generateDiffSQL($db, $dbSchema, $schema, $appSchema);
-			if(!is_array($outCompare)) {$this->msg = $outCompare; return SetupModule::FAILURE;}
-		}
-		if(!empty($outCompare))
-		{
-			$outCompare = '<fieldset><legend>Changes to update live schema to current version</legend><pre style="height:10em;overflow:scroll;">'
-				. implode("\n", $outCompare)
-				. '</pre><form method="post"><input type="submit" name="runsql" value="Run This"/></form></fieldset>';
-			$this->msg .= $outCompare . 'The above differences were found between current and latest schema.<br/>';
-			$retVal = SetupModule::WARNING;
-		}else{
-			//make sure root account is in the DB so it can be used in the "full" auth system
-			$res = $db->query('SELECT `id` FROM `ki_users` WHERE `username`="root" LIMIT 1',array(),'checking root account<br/>');
-			if($res === false)
-			{
-				$this->msg = 'Database Error checking root account.';
-				return SetupModule::WARNING;
-			}
-			if(empty($res))
-			{
-				$res = $db->query('INSERT INTO `ki_users` SET `username`="root",`email`="no",`email_verified`=1,`password_hash`="no",`enabled`=1,`last_active`=NULL,`lockout_until`=NULL', array(), 'creating root user');
-				if($res === false)
-				{
-					$this->msg = 'Database error creating root account.';
-					return SetupModule::WARNING;
-				}
-			}
-		}
-		if($this->msg == '') $this->msg = 'Database ready.';
-		if($delayedFail) $retVal = SetupModule::FAILURE;
-		return $retVal;
+		$this->msg = 'Database connected.';
+		return SetupModule::SUCCESS;
 	}
 	
 	protected function getHTMLInternal()
@@ -199,98 +113,6 @@ class SmDatabase extends SetupModule
 			$out .= $configForm;
 		}
 		return $out;
-	}
-	
-	/**
-	* Generates an array of SQL statements that would make the main DB
-	* have the same schame as the schemaCompare DB. Uses mysqldbcompare
-	* @param db Database object for the "main" DB
-	* @param dbSchema Database object for the "schemaCompare" DB
-	* @param schema the SQL script holding the schema definition for the framework
-	* @param appSchema the SQL script holding the schema definition for extra tables required by the app using the framework
-	* @return array of lines in a SQL script, or string if an error happened.
-	*/
-	protected static function generateDiffSQL(Database $db, Database $dbSchema, string $schema, string $appSchema)
-	{
-		//compare main DB to comparison DB
-		/* we use --skip-table-options to suppress AUTO_INCREMENT changes
-		   but it also skips some useful changes like charset.
-		   If mysqldbcompare ever lets you specify which table-options to check/skip, then change this.
-		*/
-		$cmdCompare = 'mysqldbcompare --server1=' . $db->connectionString() . ' ' . $db->dbName . ':' . $dbSchema->dbName . ' --skip-data-check --skip-row-count --skip-table-options --difftype=sql --run-all-tests --character-set=utf8mb4';
-		$outCompare = array();
-		exec($cmdCompare, $outCompare);
-		$missingTables = array();
-		$extraTables = array();
-		$previousLine = '';
-		foreach($outCompare as $key => $line) //remove spurious lines in the script
-		{
-			$line = preg_replace('/\s+/', ' ', $line);
-			//This is only needed because of a bug in mysqldbcompare; lines like this should be in a comment but aren't.
-			if(mb_strpos($line, 'pass SKIP SKIP') !== false)
-			{
-				unset($outCompare[$key]); 
-			}
-
-			//This is only needed because of a missing feature in mysqldbcompare; it should generate an appropriate CREATE/DROP TABLE statement instead of us having to detect a comment
-			if(substr($line, 0, 8) == '# TABLE:')
-			{
-				//detect if this is a missing or extra table
-				$liveNamePos = mb_strpos($previousLine, $db->dbName);
-				$compNamePos = mb_strpos($previousLine, $dbSchema->dbName);
-				$isMissing = $compNamePos < $liveNamePos;
-				if($isMissing)
-				{
-					$missingTables[] = substr($line, 9);
-				}else{
-					$extraTables[] = substr($line, 9);
-				}
-				unset($outCompare[$key]);
-				continue; //avoid setting this as the "previous line" since the missing/extra tables are grouped
-			}
-			
-			//remove blank lines
-			if(empty($line)) unset($outCompare[$key]);
-			
-			//remove comments
-			if($line[0] == '#') unset($outCompare[$key]);
-			
-			$previousLine = $line;
-		}
-		//grab the original CREATE TABLE statements from the script for tables noted as missing by mysqldbcompare
-		$schemas = $schema . $appSchema;
-		$schemas = explode(';', $schemas);
-		$foundTables = [];
-		foreach($missingTables as $table)
-		{
-			$found = false;
-			foreach($schemas as $index => $query)
-			{
-				$query = trim($query) . ';';
-				if(Util::contains($query, 'CREATE TABLE `' . $table . '`'))
-				{
-					$found = true;
-					$foundTables[$index] = $query; //keep track in a way that preserves their original order
-					break;
-				}
-			}
-			if(!$found)
-			{
-				return 'table <tt>' . $table . '</tt> not found in the script it came from';
-			}
-		}
-		ksort($foundTables);
-		foreach($foundTables as $query)
-		{
-			$outCompare[] = $query;
-		}
-		
-		//generate DROP TABLE statements for tables noted as extraneous by mysqldbcompare
-		foreach($extraTables as $table)
-		{
-			$outCompare[] = 'DROP TABLE `' . $table . '`;';
-		}
-		return $outCompare;
 	}
 }
 

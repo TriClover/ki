@@ -213,5 +213,105 @@ DROP PROCEDURE IF EXISTS `drop_all_tables`;
 END_SCRIPT;
 		return !in_array(false, $this->runScript($script, 'Dropping all tables'));
 	}
+	
+	/**
+	* Generates an array of SQL statements that would make this DB
+	* have the same schema as another DB. Uses mysqldbcompare.
+	* @param dbSchema Database object for the DB to use as a reference (existing contents will be lost!)
+	* @param schema the SQL script holding the schema definition
+	* @return array of lines in a SQL script, or string if an error happened.
+	*/
+	public function generateDiffSQL(Database $dbSchema, string $schema)
+	{
+		//load schema
+		if(!$dbSchema->dropAllTables()) return 'Error preparing to load schema into temp comparison DB';
+		$res = $dbSchema->runScript($schema, 'Loading schema into temp comparison DB');
+		if(in_array(false, $res)) return 'Error loading schema into temp comparison DB';
+		
+		//compare main DB to comparison DB
+		/* we use --skip-table-options to suppress AUTO_INCREMENT changes
+		   but it also skips some useful changes like charset.
+		   If mysqldbcompare ever lets you specify which table-options to check/skip, then change this.
+		*/
+		$cmdCompare = 'mysqldbcompare --server1=' . $this->connectionString() . ' ' . $this->dbName . ':' . $dbSchema->dbName . ' --skip-data-check --skip-row-count --skip-table-options --difftype=sql --run-all-tests --character-set=utf8mb4';
+		$outCompare = array();
+		exec($cmdCompare, $outCompare);
+		$missingTables = array();
+		$extraTables = array();
+		$previousLine = '';
+		foreach($outCompare as $key => $line) //remove spurious lines in the script
+		{
+			$line = preg_replace('/\s+/', ' ', $line);
+			//This is only needed because of a bug in mysqldbcompare; lines like this should be in a comment but aren't.
+			if(mb_strpos($line, 'pass SKIP SKIP') !== false)
+			{
+				unset($outCompare[$key]); 
+			}
+
+			/* This is only needed because of a missing feature in mysqldbcompare;
+			 it should generate an appropriate CREATE/DROP TABLE statement
+			 instead of us having to detect a comment.
+			 However, even if mysqldbcompare gains this feature later, we may still need to note
+			 missing tables and do some of this handling so that the CREATE TABLE statements are
+			 executed in the proper order so as not to cause errors because of foreign keys.
+			*/
+			if(substr($line, 0, 8) == '# TABLE:')
+			{
+				//detect if this is a missing or extra table
+				$liveNamePos = mb_strpos($previousLine, $this->dbName);
+				$compNamePos = mb_strpos($previousLine, $dbSchema->dbName);
+				$isMissing = $compNamePos < $liveNamePos;
+				if($isMissing)
+				{
+					$missingTables[] = substr($line, 9);
+				}else{
+					$extraTables[] = substr($line, 9);
+				}
+				unset($outCompare[$key]);
+				continue; //avoid setting this as the "previous line" since the missing/extra tables are grouped
+			}
+			
+			//remove blank lines
+			if(empty($line)) unset($outCompare[$key]);
+			
+			//remove comments
+			if($line[0] == '#') unset($outCompare[$key]);
+			
+			$previousLine = $line;
+		}
+		//grab the original CREATE TABLE statements from the script for tables noted as missing by mysqldbcompare
+		$schema = explode(';', $schema);
+		$foundTables = [];
+		foreach($missingTables as $table)
+		{
+			$found = false;
+			foreach($schema as $index => $query)
+			{
+				$query = trim($query) . ';';
+				if(Util::contains($query, 'CREATE TABLE `' . $table . '`'))
+				{
+					$found = true;
+					$foundTables[$index] = $query; //keep track in a way that preserves their original order
+					break;
+				}
+			}
+			if(!$found)
+			{
+				return 'table <tt>' . $table . '</tt> not found in the script it came from';
+			}
+		}
+		ksort($foundTables);
+		foreach($foundTables as $query)
+		{
+			$outCompare[] = $query;
+		}
+		
+		//generate DROP TABLE statements for tables noted as extraneous by mysqldbcompare
+		foreach($extraTables as $table)
+		{
+			$outCompare[] = 'DROP TABLE `' . $table . '`;';
+		}
+		return $outCompare;
+	}
 }
 ?>
