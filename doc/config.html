@@ -52,25 +52,20 @@
 	</td>
    </tr>
    <tr>
-    <td>componentsFilePath</td>
-	<td>static/components</td>
+    <td>staticDir</td>
+	<td>static</td>
 	<td>
-     File path where you configured the composer component installer to put components<br/>
-     If blank, the default is a "components" folder in DOCUMENT_ROOT, which is where they will be if you didn't specify the location to Composer either, and ran Composer in DOCUMENT_ROOT.<br/>
-     Relative paths are relative to DOCUMENT_ROOT, but you can also use an absolute path.<br/>
+     Directory on the real filesystem for static resources.
+	 Relative paths are relative to DOCUMENT_ROOT, but you can also use an absolute path.
     </td>
    </tr>
    <tr>
-    <td>componentsUrl</td>
-	<td>&nbsp;</td>
+    <td>staticUrl</td>
+	<td>/static</td>
 	<td>
-     URL to get to the components folder. You can probably leave this blank unless you put them on a separate vhost.<br/>
-     This must be either blank, an absolute path (eg. "/components") or a full URL (eg. "http://static.example.com/")<br/>
-     If blank, defaults as follows:<br/>
-     If componentsFilePath is also blank, use "/components"<br/>
-     If componentsFilePath is relative, use "/" followed by the componentsFilePath<br/>
-     If componentsFilePath is absolute and starts with the DOCUMENT_ROOT, use componentsFilePath minus the DOCUMENT_ROOT<br/>
-     If componentsFilePath is absolute and doesn't start with the DOCUMENT_ROOT, fall back to "/components"<br/>
+     URL prefix to get to the statics folder.<br/>
+     This must be either blank, an absolute path (eg. "/static") or a full URL (eg. "http://static.example.com/")<br/>
+     If blank, defaults to the current URL with an added "static." subdomain and no path.
     </td>
    </tr>
    <tr>

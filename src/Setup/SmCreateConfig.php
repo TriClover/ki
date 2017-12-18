@@ -16,8 +16,14 @@ class SmCreateConfig extends SetupModule
 	
 		if(!file_exists($liveConfigLocation))
 		{
-			$res = copy($configTemplateLocation, $liveConfigLocation);
-			if($res)
+			$fileContents = file_get_contents($configTemplateLocation);
+			$conf = json_decode($fileContents, true, 512, JSON_BIGINT_AS_STRING|JSON_OBJECT_AS_ARRAY);
+			$overrides = $this->setup->configDefaults;
+			$conf = array_replace_recursive($conf, $overrides);
+			$json = json_encode($conf, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+			$bytes = file_put_contents($liveConfigLocation, $json);
+		
+			if($bytes !== false)
 			{
 				$this->msg = 'Configuration copied from template.';
 			}else{

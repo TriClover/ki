@@ -17,7 +17,7 @@ class SmAuth extends SetupModule
 
 		if(empty($config['root']['enable_root']) || !$config['root']['enable_root'])
 		{
-			$this->msg = 'Root account disabled. (This is good unless you need it to continue setup or create other users.)';
+			$this->msg = 'Root account disabled. This is good unless you need it to continue setup or create other users. To change this go to ' . $liveConfigLocation;
 			return SetupModule::FAILURE;
 		}else{
 			$this->msg = 'Root account enabled. Once you have finished this setup and created a normal user account you should probably disable root.';
@@ -65,7 +65,7 @@ class SmAuth extends SetupModule
 
 		if(empty($config['root']['root_ip']))
 		{
-			if(empty($POST['root_ip']))
+			if(empty($_POST['root_ip']))
 			{
 				$this->msg = 'Root account has no IP configured.<form method="post"><input type="submit" name="root_ip" value="Use Current IP"/></form>';
 				return SetupModule::FAILURE;

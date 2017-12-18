@@ -59,33 +59,29 @@ class Config
 	{
 		if($conf === false) return $conf;
 		
-		$conf['general']['componentsFilePath'] = trim($conf['general']['componentsFilePath']);
-		if(empty($conf['general']['componentsFilePath']))
+		//resolve relative path
+		if(!Util::startsWith($conf['general']['staticDir'], '/'))
 		{
-			$conf['general']['componentsFilePath'] = 'components';
+			$conf['general']['staticDir'] = $_SERVER['DOCUMENT_ROOT'] . '/' . $conf['general']['staticDir'];
 		}
-		if(!Util::startsWith($conf['general']['componentsFilePath'], '/'))
+		//remove trailing slash
+		if(Util::endsWith($conf['general']['staticDir'], '/'))
 		{
-			$conf['general']['componentsFilePath'] = $_SERVER['DOCUMENT_ROOT'] . '/' . $conf['general']['componentsFilePath'];
-		}
-		if(Util::endsWith($conf['general']['componentsFilePath'], '/'))
-		{
-			$conf['general']['componentsFilePath'] = substr($conf['general']['componentsFilePath'], 0, strlen($conf['general']['componentsFilePath'])-1);
+			$conf['general']['staticDir'] = substr($conf['general']['staticDir'], 0, strlen($conf['general']['staticDir'])-1);
 		}
 		
-		$conf['general']['componentsUrl'] = trim($conf['general']['componentsUrl']);
-		if(empty($conf['general']['componentsUrl']))
+		//fill default URL if not specified
+		$conf['general']['staticUrl'] = trim($conf['general']['staticUrl']);
+		if(empty($conf['general']['staticUrl']))
 		{
-			if(Util::startsWith($conf['general']['componentsFilePath'], $_SERVER['DOCUMENT_ROOT']))
-			{
-				$conf['general']['componentsUrl'] = substr($conf['general']['componentsFilePath'], strlen($_SERVER['DOCUMENT_ROOT']));
-			}else{
-				$conf['general']['componentsUrl'] = '/components';
-			}
+			$scheme = $_SERVER['REQUEST_SCHEME'] . '://';
+			$host   = $_SERVER['HTTP_HOST'];
+			$conf['general']['staticUrl'] = $scheme . 'static.' . $host;
 		}
-		if(Util::endsWith($conf['general']['componentsUrl'], '/'))
+		//remove trailing slash
+		if(Util::endsWith($conf['general']['staticUrl'], '/'))
 		{
-			$conf['general']['componentsUrl'] = substr($conf['general']['componentsUrl'], 0, strlen($conf['general']['componentsUrl'])-1);
+			$conf['general']['staticUrl'] = substr($conf['general']['staticUrl'], 0, strlen($conf['general']['staticUrl'])-1);
 		}
 		
 		return $conf;

@@ -15,15 +15,19 @@ class Setup extends Form
 	private $responses = array();     //return codes from getHTML() for each module
 	private $handlingErrors = array();//Contains strings if there were errors so serious no modules could be processed.
 	public $siteName = NULL;
+	public $configDefaults = NULL;
 	
 	/**
 	* Initialize the setup.
 	* @param siteName the internal name of the site, used to name the config file
 	* @param modules Any application-level SetupModule implementation names (fully qualified) to include in setup.
+	* @param configDefaults Put values here to override the defaults (only when the config file is being newly created)
 	*/
-	function __construct(string $siteName, array $modules = array())
+	function __construct(string $siteName, array $modules = array(), array $configDefaults = array())
 	{
 		$this->siteName = $siteName;
+		$this->configDefaults = $configDefaults;
+
 		$ki_mods = array(
 			'\mls\ki\Setup\SmPHP',
 			'\mls\ki\Setup\SmPackages',
@@ -32,7 +36,8 @@ class Setup extends Form
 			'\mls\ki\Setup\SmDatabase',
 			'\mls\ki\Setup\SmDatabaseVersion',
 			'\mls\ki\Setup\SmDatabaseSchema',
-			'\mls\ki\Setup\SmDatabaseData');
+			'\mls\ki\Setup\SmDatabaseData',
+			'\mls\ki\Setup\SmInstallStatics');
 		$this->moduleNames = array_merge($ki_mods, $modules);
 		foreach($this->moduleNames as $mn)
 		{

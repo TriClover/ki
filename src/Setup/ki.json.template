@@ -24,8 +24,8 @@
     "general": {
         "sitename": "site1",
         "timezone": "America/Detroit",
-        "componentsFilePath": "/var/www/site1/webroot/static/components",
-        "componentsUrl": "/static/components",
+		"staticDir": "static",
+		"staticUrl": "/static",
         "environment": "local"
     },
     "mail": {
@@ -37,7 +37,7 @@
     "root": {
         "enable_root": "1",
         "root_password": "",
-        "root_ip": "192.168.102.2"
+        "root_ip": ""
     },
     "sessions": {
         "remembered_timeout_idle_minutes": "20160",
