@@ -14,10 +14,15 @@ class Config
 		}
 		if(Config::$conf === NULL)
 		{
-			Config::$conf = array();
+			$configTemplateLocation = dirname(__FILE__) . '/Setup/ki.json.template';
+			$defaultFileContents = file_get_contents($configTemplateLocation);
+			$defaultConf = json_decode($defaultFileContents, true, 512, JSON_BIGINT_AS_STRING|JSON_OBJECT_AS_ARRAY);
+			
 			$fileContents = file_get_contents(Config::$path);
-			Config::$conf = json_decode($fileContents, true, 512, JSON_BIGINT_AS_STRING|JSON_OBJECT_AS_ARRAY);
-			Config::$conf = Config::processDefaults(Config::$conf);
+			$conf = json_decode($fileContents, true, 512, JSON_BIGINT_AS_STRING|JSON_OBJECT_AS_ARRAY);
+			
+			$conf = array_replace_recursive($defaultConf, $conf);
+			Config::$conf = Config::processDefaults($conf);
 		}
 		return Config::$conf;
 	}

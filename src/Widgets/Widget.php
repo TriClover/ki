@@ -50,7 +50,7 @@ abstract class Widget
 	{
 		if($this->printed)
 		{
-			Log::warn('Generated HTML for the same DataTable twice in one page load. This is bad for performance.');
+			Log::warn('Generated HTML for the same ' . get_class($this) . ' twice in one page load. This is bad for performance.');
 		}
 		$this->printed = true;
 		return $this->getHTMLInternal();

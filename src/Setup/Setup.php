@@ -81,7 +81,7 @@ class Setup extends Form
 				$out .= '<td>?';
 				$processed = false;
 			}
-			$out .= '</td><td>' . ($processed?$mod->getHTML():'&nbsp;') . '</td></tr>';
+			$out .= '</td><td>' . ($processed?$html:'&nbsp;') . '</td></tr>';
 		}
 		$out .= '</table>';
 		return $out;
