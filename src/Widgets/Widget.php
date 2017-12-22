@@ -18,7 +18,7 @@ abstract class Widget
 	* @param inputStyles Associative array of styles recieved from the code instantiating your class.
 	* @param allowedStyles The names of CSS properties your code wants to use
 	* @param defaultStyles Associative array of styles to be returned for properties not specified in inputStyles
-	* @return a string ready to insert into the "style" propery of an HTML tag.
+	* @return a string ready to insert into the "style" property of an HTML tag.
 	*/
 	protected static function filterStyles(array $inputStyles, array $allowedStyles, array $defaultStyles = array())
 	{
