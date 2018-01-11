@@ -12,7 +12,6 @@ class SmDatabase extends SetupModule
 	
 	protected function handleParamsInternal()
 	{
-		$requiredDbVersion = '10.0.12'; //MariaDB minimum acceptable version
 		$config = Config::get();
 		
 		//process changes to config

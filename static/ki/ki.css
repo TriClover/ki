@@ -252,7 +252,7 @@ body{
 .ki_rtabber{                             /* Whole widget */
 	position:relative;
 }
-.ki_rtabber input{                       /* Radio buttons */
+.ki_rtabber>input{                       /* Radio buttons */
 	display:none;
 	float:left;
 }
@@ -305,4 +305,18 @@ body{
 }
 .ki_rtabber input.ki_rtabber_untab + label + div{
 	border:none;
+}
+
+/* LoginForm */
+#auth_Register .ki_table>form>div{
+	display:inline-block;float:left;
+}
+#auth{
+	float:right;
+}
+
+/* Cross browser standardization */
+input[type=text],input[type=password],input[type=email]{
+	width:137px;
+	padding:2px;
 }

@@ -53,7 +53,6 @@ class LoginForm extends Form
 		$request = Authenticator::$request;
 		$out = '';
 		$outputSpanOpen = '<span style="color:red;font-size:75%;float:right;">';
-		$tabberId = 'auth';
 
 		if($user === NULL)
 		{
@@ -77,13 +76,9 @@ class LoginForm extends Form
 			$tabs = array('Login'=>$coreLogin, 'Register'=>$regForm, 'Forgot Username/Password?' => $resetForm);
 			$tabberHeight = '52px';
 			
-			$tabberObj = new TargetTabber($tabberId, $tabs, array('width'=>'350px', 'height'=>'auto'));
+			$tabberObj = new TargetTabber('auth', $tabs, array('width'=>'350px', 'height'=>'auto'));
 			$tabber = $tabberObj->getHTML();
 			$out .= $tabber;
-			$out .= '<style scoped>'
-				. '#auth_Register .ki_table>form>div{display:inline-block;float:left;}'
-				. '#' . $tabberId . '{float:right;}'
-				. '</style>';
 		}else{
 			$items = array();
 			$items[] = new MenuItem('Logout', $_SERVER['SCRIPT_NAME'], array('logout' => '1'));

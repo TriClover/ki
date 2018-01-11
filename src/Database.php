@@ -271,11 +271,9 @@ END_SCRIPT;
 				continue; //avoid setting this as the "previous line" since the missing/extra tables are grouped
 			}
 			
-			//remove blank lines
-			if(empty($line)) unset($outCompare[$key]);
 			
-			//remove comments
-			if($line[0] == '#') unset($outCompare[$key]);
+			if    (empty($line)   ) unset($outCompare[$key]); //remove blank lines
+			elseif($line[0] == '#') unset($outCompare[$key]); //remove comments
 			
 			$previousLine = $line;
 		}
