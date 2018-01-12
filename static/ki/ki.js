@@ -40,3 +40,8 @@ $(document).ready(function()
 	});
 });
 
+//Environment Indicator
+function kiEnvIndClose()
+{
+	$('#ki_environmentIndicator').css('display','none');
+}

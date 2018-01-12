@@ -12,6 +12,25 @@ body{
 	cursor:pointer;
 }
 
+#ki_environmentIndicator{
+	position:fixed;
+	top:0;
+	left:0;
+	background-color:#FFFF00;
+	border-width:1px;
+	border-color:#000;
+	border-style:solid;
+	font-family:Verdana, Arial, Helvetica, sans-serif;
+	font-size:10px;
+	opacity:0.9;
+}
+
+#ki_envind_close{
+	text-decoration:none;
+	color:#A00;
+	font-weight:bold;
+}
+
 /* DataTable */
 .ki_table{
 	display:table;

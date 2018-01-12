@@ -8,6 +8,8 @@ class MarkupGenerator
 	{
 		$config = Config::get();
 		$comp = $config['general']['staticDir'];
+		$env = $config['general']['environment'];
+		$indicator = $config['general']['showEnvironment'] && !empty($config['general']['environment']);
 		$mt_jquery_js    = filemtime($comp . '/jquery.min.js');
 		$mt_jqueryui_js  = filemtime($comp . '/jquery-ui/jquery-ui.min.js');
 		$mt_jqueryui_css = filemtime($comp . '/jquery-ui/jquery-ui.min.css');
@@ -20,7 +22,7 @@ class MarkupGenerator
 		$out = <<<HTMLHEAD
 <!DOCTYPE html>
 <html>
- <head>
+ <head itemscope>
   <meta charset="utf-8"/>
   <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
   <link rel="shortcut icon" href="$base/favicon.ico"/>
@@ -32,9 +34,18 @@ class MarkupGenerator
   <link rel="stylesheet" href="$base/ki/ki.css?ver=$mt_ki_css"/>
   <script src="$base/ki/ki.js?ver=$mt_ki_js"></script>
   <title>$title</title>
+  <meta itemprop="environment" content="$env"/>
+
 HTMLHEAD;
 		$out .= $headContent;
 		$out .= " </head>\n <body>";
+		
+		if($indicator)
+		{
+			$out .= '<div id="ki_environmentIndicator">Environment: '
+				. $env . ' &nbsp; <a id="ki_envind_close" href="javascript:kiEnvIndClose();">✘</a></div>';
+		}
+		
 		return $out;
 	}
 

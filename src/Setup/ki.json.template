@@ -24,9 +24,10 @@
     "general": {
         "sitename": "site1",
         "timezone": "America/Detroit",
-		"staticDir": "static",
-		"staticUrl": "/static",
-        "environment": "local"
+        "staticDir": "static",
+        "staticUrl": "/static",
+        "environment": "local",
+        "showEnvironment": true
     },
     "mail": {
         "send": "0",
