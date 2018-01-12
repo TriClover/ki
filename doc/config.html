@@ -43,7 +43,7 @@
    </tr>
   
    <tr>
-    <td rowspan="4">General</td>
+    <td rowspan="5">General</td>
 	<td>sitename</td>
 	<td>site1</td>
 	<td>
@@ -72,7 +72,14 @@
     <td>environment</td>
 	<td>local</td>
 	<td>
-	 if environment is anything other than blank, it will show the non-production environment indicators
+	 Environment name (eg. Dev, QA, Stage). Leave blank for production. If non-blank, all emails will note the environment name.
+	</td>
+   </tr>
+   <tr>
+    <td>showEnvironment</td>
+	<td>true</td>
+	<td>
+	 If true, and environment is non-blank, it will show the non-production environment indicator in the browser
 	</td>
    </tr>
    
