@@ -192,13 +192,13 @@ class LoginForm extends Form
 									 'type' => 'password');
 		
 		$fields = array();
-		$fields[] = new DataTableField('id', NULL, 'Register', false, false, false);
-		$fields[] = new DataTableField('username', NULL, NULL, true, false, true);
-		$fields[] = new DataTableField('email', NULL, NULL, true, false, true, array('type' => 'email'));
-		$fields[] = new DataTableField('email_verified', NULL, NULL, false, false, 0);
-		$fields[] = new DataTableField('password_hash', NULL, 'password', true, false, true, $passwordConstraints, $formatPassField);
-		$fields[] = new DataTableField('enabled', NULL, NULL, false, false, 1);
-		$fields[] = new DataTableField('last_active', NULL, NULL, false, false, false);
+		$fields[] = new DataTableField('id',            'ki_users', 'Register', false, false, false);
+		$fields[] = new DataTableField('username',      'ki_users', NULL, true, false, true);
+		$fields[] = new DataTableField('email',         'ki_users', NULL, true, false, true, array('type' => 'email'));
+		$fields[] = new DataTableField('email_verified','ki_users', NULL, false, false, 0);
+		$fields[] = new DataTableField('password_hash', 'ki_users', 'password', true, false, true, $passwordConstraints, $formatPassField);
+		$fields[] = new DataTableField('enabled',       'ki_users', NULL, false, false, 1);
+		$fields[] = new DataTableField('last_active',   'ki_users', NULL, false, false, false);
 		$events = new DataTableEventCallbacks($reg_onAdd, NULL, NULL, $reg_beforeAdd, NULL, NULL);
 		return new DataTable('register', 'ki_users', $fields, true, false, false, 0, false, false, false, false, $events, NULL);
 	}

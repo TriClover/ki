@@ -30,7 +30,7 @@ class Database
 	private static $all_connected = false;
 	
 	/**
-	* Get/set mysqli objects for database connection
+	* Get/set Database objects for database connection
 	* No args = return main DB (or NULL if none)
 	* 1 arg  = return DB having the given title (or NULL if none)
 	* 2 args = add new DB with the given title
@@ -67,7 +67,7 @@ class Database
 		$stmt = $db->prepare($query);
 		if($stmt === false)
 		{
-			Log::log($failureLogLevel, 'Query preparation failed - ' . $purpose);
+			Log::log($failureLogLevel, 'Query preparation failed - ' . $purpose . ': ' . $db->error . ' QUERY: ' . $query);
 			return false;
 		}
 		
@@ -76,7 +76,7 @@ class Database
 		{
 			if(!$stmt->bind_param(str_repeat('s',count($args)), ...$args))
 			{
-				Log::log($failureLogLevel, 'Parameter binding failed - ' . $purpose . ': ' . $stmt->error);
+				Log::log($failureLogLevel, 'Parameter binding failed - ' . $purpose . ': ' . $stmt->error . ' QUERY: ' . $query);
 				$stmt->close();
 				return false;
 			}
@@ -85,7 +85,7 @@ class Database
 		//execute
 		if(!$stmt->execute())
 		{
-			Log::log($failureLogLevel, 'Prepared statement execution failed - ' . $purpose . ': ' . $stmt->error);
+			Log::log($failureLogLevel, 'Prepared statement execution failed - ' . $purpose . ': ' . $stmt->error . ' QUERY: ' . $query);
 			$stmt->close();
 			return false;
 		}
@@ -104,7 +104,7 @@ class Database
 		//handle errors in getting SELECT result
 		if($res === false)
 		{
-			Log::log($failureLogLevel, 'Getting result set handle for prepared statement failed - ' . $purpose . ': ' . $stmt->error);
+			Log::log($failureLogLevel, 'Getting result set handle for prepared statement failed - ' . $purpose . ': ' . $stmt->error . ' QUERY: ' . $query);
 			$stmt->close();
 			return false;
 		}
@@ -310,6 +310,15 @@ END_SCRIPT;
 			$outCompare[] = 'DROP TABLE `' . $table . '`;';
 		}
 		return $outCompare;
+	}
+	
+	/**
+	* @param val input value
+	* @return output from mysqli->real_escape_string
+	*/
+	function esc($val)
+	{
+		return $this->connection->real_escape_string($val);
 	}
 }
 ?>

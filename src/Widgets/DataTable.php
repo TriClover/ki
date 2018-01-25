@@ -12,10 +12,10 @@ class DataTable extends Form
 {
 	//setup parameters
 	protected $title;            //title for this widget - needed to separate multiple DataTables on the same page
-	protected $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first foreign key found. For tables with no direct foreign key it will look for a many-to-many-relation table named firsttable_othertable with appropriate foreign keys.
+	protected $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first matching foreign key found (FK in base table connected to PK in other table).
 	protected $fields;           //array of DataTableField objects specifying what to do with each field. Fields not specified will get the defaults shown in the DataTableField class. A field with NULL for the name overrides what is used for fields not specified.
-	protected $allow_add;        //true: allow adding rows. false: dont. array: allow adding rows but only allow input for the given fields. Disallowed fields that are NOT NULL and don't have a default value here or in the schema will cause adding to be disallowed entirely. Numeric keys will interpret the value as a field name to allow. String keys will interpret the key as the field name and the value as the directive for that field, where true=allow editing, false=disallow and use default/auto value, and string or number=disallow and use this value instead. fields not in $fields_show are ignored.
-	protected $allow_delete;     //true: allow deleting rows. false: don't. string: allow but set this field=false instead of actually deleting
+	protected $allow_add;        //true: allow adding rows. false: dont.
+	protected $allow_delete;     //true: allow deleting rows. false: don't. string: allow but set this field=false (table.field) instead of actually deleting
 	protected $filter;           //if string, use as sql fragment in where clause to filter output: useful if table has "enabled" field.
 	protected $rows_per_page;
 	protected $show_exports;     //true: show all export buttons. false: don't. array: show only specified formats (xlsx,xls,csv,xml,json,sql)
@@ -26,10 +26,13 @@ class DataTable extends Form
 	protected $buttonCallbacks;  //array mapping titles to function names that get their own buttons in the table for each row. They recieve the PK.
 	
 	//setup, calculated
-	protected $inPrefix;              //prefix of all HTML input names
+	protected $inPrefix;         //prefix of all HTML input names
 	protected $customCallbacks = array();
 	protected $allow_edit;
 	protected $allow_show;
+	protected $joinTables = array();
+	protected $joinString;
+	protected $alias2fq = array(); //keys = aliases of all fields, values = unquoted FQ field names
 	
 	//schema
 	protected $pk = array();   //fields that are in the primary key
@@ -51,7 +54,7 @@ class DataTable extends Form
 	* translating it to a form easier for the internal code to use
 	*/
 	function __construct($title,
-	                     $table,                     //todo: support multiple
+	                     $table,
 	                     $fields            = array(),
 	                     $allow_add         = false,
 	                     $allow_delete      = false,
@@ -66,7 +69,6 @@ class DataTable extends Form
 	{
 		//save parameters
 		$this->title             = $title;
-		$this->table             = $table;
 		$this->allow_add         = $allow_add;
 		$this->allow_delete      = $allow_delete;
 		$this->filter            = mb_strlen($filter) > 0 ? $filter : '1';
@@ -81,8 +83,23 @@ class DataTable extends Form
 		//calculate more setup info
 		$this->inPrefix = 'ki_datatable_' . htmlspecialchars($title) . '_';
 		
+		//identify keys for multi-table
+		if(is_array($table))
+		{
+			$this->table = $table[0];
+			$joinTables = [];
+			foreach($table as $key => $value)
+			{
+				if($key != 0) $joinTables[$key-1] = $value;
+			}
+			$this->joinTables = DataTableJoin::createAll($this->table, $joinTables);
+		}else{
+			$this->table = $table;
+			$table = [$table];
+		}
+		
 		//process field definitions
-		$defaultField = new DataTableField(NULL);
+		$defaultField = new DataTableField(NULL, $this->table);
 		if($fields === NULL) $fields = array();
 		if(!is_array($fields))
 		{
@@ -90,6 +107,7 @@ class DataTable extends Form
 			$this->setupOK = false;
 			return;
 		}
+		$this->fields = array();
 		foreach($fields as $inputField)
 		{
 			if($inputField->name === NULL)
@@ -98,53 +116,91 @@ class DataTable extends Form
 				$defaultField = $inputField;
 			}else{
 				//store the given field config in the DataTable indexed by field name
-				$this->fields[$inputField->name] = $inputField;
-				if($inputField->table === NULL)
-					$this->fields[$inputField->name]->table = $this->table;
+				$this->fields[$inputField->fqName()] = $inputField;
 			}
 		}
 		
 		//get schema info
-		$db = Database::db()->connection;
-		$query = 'SHOW COLUMNS FROM `' . $this->table . '`';
-		$res = $db->query($query);
-		if($res === false)
+		$db = Database::db();
+		foreach($table as $tab)
 		{
-			Log::error('Getting schema info failed for dataTable ' . $this->title
-				. ' with error ' . $db->errno . ': ' . $db->error . ' -- ' . $query);
-			$this->setupOK = false;
-			return;
-		}
-		while($row = $res->fetch_assoc())
-		{
-			//if this field isn't in the config list, add it with default settings
-			if(!array_key_exists($row['Field'], $this->fields))
+			$query = 'SHOW COLUMNS FROM `' . $tab . '`';
+			$res = $db->query($query, [], 'getting schema info for dataTable ' . $this->title);
+			if($res === false)
 			{
-				Log::trace('DataTable ' . $this->title . ' applying default values for unconfigured field: ' . $row['Field']);
-				$this->fields[$row['Field']] = clone $defaultField;
-				$this->fields[$row['Field']]->name = $row['Field'];
-				$this->fields[$row['Field']]->determineAlias();
-				$this->fields[$row['Field']]->table = $this->table;
-				//Exception: Never try to enable editing on PK fields
-				if($row['Key'] == 'PRI') $this->fields[$row['Field']]->edit = false;
+				$this->setupOK = false;
+				return;
 			}
-			//Don't accept the default of allowing user value for add on auto_increment column
-			if(mb_strpos($row['Extra'],'auto_increment') !== false)
+			foreach($res as $row)
 			{
-				$this->fields[$row['Field']]->add = false;
-			}
+				$fieldFQ = $tab . '.' . $row['Field'];
+				//if this field isn't in the config list, add it with default settings
+				if(!isset($this->fields[$fieldFQ]))
+				{
+					Log::trace('DataTable ' . $this->title . ' applying default values for unconfigured field: ' . $fieldFQ);
+					$this->fields[$fieldFQ] = clone $defaultField;
+					$this->fields[$fieldFQ]->name = $row['Field'];
+					$this->fields[$fieldFQ]->alias = $fieldFQ;
+					$this->fields[$fieldFQ]->table = $tab;
+					//Exception: Never try to enable editing on PK fields
+					if($row['Key'] == 'PRI') $this->fields[$fieldFQ]->edit = false;
+				}
 				
-			//store schema info in the field config
-			$this->fields[$row['Field']]->dataType     = $row['Type'];
-			$this->fields[$row['Field']]->nullable     = $row['Null'];
-			$this->fields[$row['Field']]->keyType      = $row['Key'];
-			$this->fields[$row['Field']]->defaultValue = $row['Default'];
-			$this->fields[$row['Field']]->extra        = $row['Extra'];
-			
-			//keep track of which fields have certain properties so we're not searching later
-			if($row['Key'] == 'PRI') $this->pk[] = $row['Field'];
-			if(mb_strpos($row['Extra'],'auto_increment') !== false) $this->autoCol = $row['Field'];
+				//Don't allow editing on fields critical to a join. It can work, but with a result that would be very confusing to the user.
+				foreach($this->joinTables as $join)
+				{
+					if(($tab == $join->mainTable && $row['Field'] == $join->mainTableFKField)
+						|| ($tab == $join->joinTable && $row['Field'] == $join->joinTableReferencedUniqueField))
+					{
+						$this->fields[$fieldFQ]->edit = false;
+					}
+				}
+				
+				//Don't accept the default of allowing user value for add on auto_increment column
+				if(mb_strpos($row['Extra'],'auto_increment') !== false)
+				{
+					$this->fields[$fieldFQ]->add = false;
+				}
+
+				//store schema info in the field config
+				$this->fields[$fieldFQ]->dataType     = $row['Type'];
+				$this->fields[$fieldFQ]->nullable     = $row['Null'];
+				$this->fields[$fieldFQ]->keyType      = $row['Key'];
+				$this->fields[$fieldFQ]->defaultValue = $row['Default'];
+				$this->fields[$fieldFQ]->extra        = $row['Extra'];
+				
+				//keep track of which fields have certain properties so we're not searching later
+				if($tab == $this->table)
+				{
+					if($row['Key'] == 'PRI')
+						$this->pk[] = $row['Field'];
+					if(mb_strpos($row['Extra'],'auto_increment') !== false)
+						$this->autoCol = $row['Field'];
+				}else{
+					if($row['Key'] == 'PRI')
+						$this->joinTables[$tab]->pk[] = $row['Field'];
+					if(mb_strpos($row['Extra'],'auto_increment') !== false)
+						$this->joinTables[$tab]->autoCol = $row['Field'];
+				}
+				//bail on duplicate alias
+				if(isset($this->alias2fq[$this->fields[$fieldFQ]->alias]))
+				{
+					Log::error('DataTable ' . $this->title . ' specified a duplicate alias.');
+					$this->setupOK = false;
+					return;
+				}else{
+					$this->alias2fq[$this->fields[$fieldFQ]->alias] = $fieldFQ;
+				}
+			}
 		}
+		
+		//joins, for multi-table
+		$joins = [];
+		if(!empty($this->joinTables))
+		{
+			foreach($this->joinTables as $join) $joins[] = $join->joinSql();
+		}
+		$this->joinString = implode(' ', $joins);
 		
 		//check schema and setup
 		
@@ -155,7 +211,7 @@ class DataTable extends Form
 			if($field->dataType === NULL)
 			{
 				unset($this->fields[$fname]);
-				Log::warn('DataTable ' . $this->title . ' asked to show a field that is not in the table: ' . $fname);
+				Log::warn('DataTable ' . $this->title . ' asked to show a field that is not in any included table: ' . $fname);
 				Log::debug(Util::toString($this->fields));
 			}else{
 				$this->fields[$fname]->constraints = $this->findConstraints($fname);
@@ -187,7 +243,7 @@ class DataTable extends Form
 				if(in_array($fname,$this->pk))
 				{
 					$this->fields[$fname]->edit = false;
-					Log::warn('DataTable ' . $this->title . 'asked to edit a field that was part of the primary key: ' . $fname);
+					Log::warn('DataTable ' . $this->title . 'asked to edit a field that was part of a primary key: ' . $fname);
 					continue;
 				}
 				$this->allow_edit = true;
@@ -257,36 +313,19 @@ class DataTable extends Form
 		$fields = array(); //query snippets listing each real field and its alias if any
 		foreach($this->fields as $field)
 		{
-			$fields[] = '`' . $field->table . '`.`' . $field->name . '` AS ' . $field->alias;
+			$fields[] = $field->fqName(true) . ' AS "' . $field->alias . '"';
 		}
 		$fields = implode(',', $fields);
 		
 		//get data
-		$db = Database::db()->connection;
-		$query = 'SELECT SQL_CALC_FOUND_ROWS ' . $fields . ' FROM ' . $this->table . ' WHERE ' . $this->filter . ' LIMIT ' . $limit_start . ',' . $this->rows_per_page;
-		$res = $db->query($query);
-		if($res === false)
-		{
-			Log::error('Query failed for dataTable ' . $this->title
-				. ' with error ' . $db->errno . ': ' . $db->error . ' -- ' . $query);
-			return '';
-		}
-		$query = 'SELECT FOUND_ROWS()';
-		$total_res = $db->query($query);
-		if($total_res === false)
-		{
-			Log::error('Query failed for dataTable ' . $this->title
-				. ' with error ' . $db->errno . ': ' . $db->error . ' -- ' . $query);
-			return '';
-		}
-		$total = $total_res->fetch_array()[0];
-		$total_res->close();
-		$data = array();
-		while($row = $res->fetch_assoc())
-		{
-			$data[] = $row;
-		}
-		$res->close();
+		$db = Database::db();
+		$query = 'SELECT SQL_CALC_FOUND_ROWS ' . $fields . ' FROM ' . $this->table . ' ' . $this->joinString . ' WHERE ' . $this->filter . ' LIMIT ' . $limit_start . ',' . $this->rows_per_page;
+		$res = $db->query($query, [], 'main data-displaying query for DataTable ' . $this->title);
+		if($res === false) return '';
+		$query = 'SELECT FOUND_ROWS() AS total';
+		$total_res = $db->query($query, [], 'getting total row count for limited fetch in DataTable ' . $this->title);
+		if($total_res === false) return '';
+		$total = $total_res[0]['total'];
 		
 		//calculate data
 		$pages = ($this->rows_per_page < 1) ? 0 : ceil(((double)$total) / $this->rows_per_page);
@@ -322,29 +361,29 @@ class DataTable extends Form
 			$out .= "\n" . '   </div>';
 		}
 		$json_data = array();
-		foreach($data as $row)
+		foreach($res as $row)
 		{
-			$dataRow = '';
-			//data columns
+			$fqRow = []; //make copy of row indexed by FQ names instead of alias
 			foreach($row as $col => $value)
 			{
-				$realCol = $this->realColName($col);
-				if($realCol === NULL)
-				{
-					Log::error('DataTable got unknown alias back from database: ' . $alias);
-					return '';
-				}
-				if(!$this->fields[$realCol]->show) continue;
+				$colFQ = $this->alias2fq[$col];
+				$fqRow[$colFQ] = $value;
+			}
+			$dataRow = '';
+			//data columns
+			foreach($fqRow as $col => $value)
+			{
+				if(!$this->fields[$col]->show) continue;
 				$value = htmlspecialchars($value);
 				$dataRow .= "\n    " . '<div>';
 				$dataCell = '';
 				$cellType = NULL;
-				if($this->fields[$realCol]->edit)
+				if($this->fields[$col]->edit)
 				{
 					$cellType = "edit";
-					$inputName = $this->inputId($realCol, $row);
+					$inputName = $this->inputId($col, $fqRow);
 					$inputAttributes = array();
-					if($this->fields[$realCol]->constraints['type'] == 'checkbox')
+					if($this->fields[$col]->constraints['type'] == 'checkbox')
 					{
 						$dataCell .= "\n     " . '<input type="hidden" name="' . $inputName . '" id="H' . $inputName . '" value="0"/>';
 						$inputAttributes[] = 'value="1"';
@@ -355,16 +394,16 @@ class DataTable extends Form
 						$json_data[$inputName] = $value;
 					}
 					$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
-					$inputAttributes[] = $this->stringifyConstraints($realCol);
+					$inputAttributes[] = $this->stringifyConstraints($col);
 					$inputAttributes[] = 'class="ki_table_input"';
 					$dataCell .= "\n     " . '<input ' . implode(' ', $inputAttributes) . '/>';
 				}else{
 					$cellType = "show";
 					$dataCell .= "\n     " . $value;
 				}
-				if($this->fields[$realCol]->outputFilter !== NULL)
+				if($this->fields[$col]->outputFilter !== NULL)
 				{
-					$filterFunc = $this->fields[$realCol]->outputFilter;
+					$filterFunc = $this->fields[$col]->outputFilter;
 					$dataCell = $filterFunc($dataCell, $cellType);
 				}
 				$dataRow .= $dataCell;
@@ -376,14 +415,14 @@ class DataTable extends Form
 				$dataRow .= "\n" . '    <div class="ki_table_action">' . $pageInput;
 				if($this->allow_edit)
 				{
-					$buttonName = $this->inputId('0', $row, 'submit');
+					$buttonName = $this->inputId('0', $fqRow, 'submit');
 					$dataRow .=  '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" value="💾" class="ki_button_save" title="Save"/>';
 				}
 				if($this->allow_edit || ($this->allow_delete !== false))
 					$dataRow .= '<span class="ki_noscript_spacer"> - </span>';
 				if($this->allow_delete !== false)
 				{
-					$buttonName = $this->inputId('0', $row, 'delete');
+					$buttonName = $this->inputId('0', $fqRow, 'delete');
 					$dataRow .= '<div class="ki_button_confirm_container">';
 					$dataRow .= '<button type="button" id="' . $buttonName . '" class="ki_button_del" title="Delete" style="">❌</button>';
 					$dataRow .= '<div class="ki_button_confirm"><input type="submit" name="' . $buttonName . '" value="Confirm Delete" formnovalidate /></div>';
@@ -397,7 +436,7 @@ class DataTable extends Form
 				$dataRow .= "\n" . '    <div class="ki_table_action">' . $pageInput;
 				foreach($this->buttonCallbacks as $cbName => $cbFunc)
 				{
-					$buttonName = $this->inputId('0', $row, 'callback_'.$cbFunc);
+					$buttonName = $this->inputId('0', $fqRow, 'callback_'.$cbFunc);
 					$dataRow .= '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" class="ki_button_action" value="' . $cbName . '" formnovalidate />';
 				}
 				$dataRow .= "\n" . '    </div>';
@@ -426,7 +465,7 @@ class DataTable extends Form
 				}
 				elseif($directive === true)
 				{
-					$inputName = $this->inPrefix . 'new_' . htmlspecialchars($col);
+					$inputName = $this->inPrefix . 'new_' . htmlspecialchars($this->fields[$col]->name);
 					$inputAttributes = array();
 					$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
 					$inputAttributes[] = $this->stringifyConstraints($col);
@@ -469,31 +508,8 @@ class DataTable extends Form
 			$(".ki_button_save").css("position","absolute");
 			$(".ki_noscript_spacer").remove();
 			$("input").on("change keydown keyup blur", function(){
-				ki_setEditVisibility($(this).parent().parent().find('.ki_button_save'));
+				ki_setEditVisibility($(this).parent().parent().find('.ki_button_save'), inputValues);
 			});
-			
-			function ki_setEditVisibility(btn)
-			{
-				var buttonFields = btn.parent().parent().find('.ki_table_input').not('.ws-inputreplace');
-				var delBtn = btn.parent().parent().find('.ki_button_confirm_container');
-				for(var i = 0; i < buttonFields.length; i++)
-				{
-					var control = $(buttonFields[i]);
-					var changed = false;
-					if(control.attr('type') == "checkbox")
-					{
-						changed = (control.prop('checked') == true) != (inputValues[control.attr('id')] == true);
-					}else{
-						changed = control.prop('value') != inputValues[control.attr('id')];
-					}
-					if(changed)
-					{
-						btn.css("z-index","30");
-						return;
-					}
-				}
-				btn.css("z-index","5");
-			}
 HTML;
 			$js = str_replace('inputValues',$arrIV,$js);
 			$js .= '</script>';
@@ -504,7 +520,7 @@ HTML;
 	}
 	
 	/**
-	* @param col any column name
+	* @param col any column name (FQ)
 	* @return an array of html5 validation constraints that apply to it including the type attribute
 	*/
 	protected function findConstraints($col)
@@ -557,7 +573,7 @@ HTML;
 	}
 	
 	/**
-	* @param col a column name
+	* @param col a column name (FQ)
 	* @return constraints for column in HTML form ready to be inserted into an input
 	*/
 	protected function stringifyConstraints($col)
@@ -579,7 +595,7 @@ HTML;
 	protected function handleParamsInternal()
 	{
 		Log::trace('Handling params for DataTable ' . $this->title);
-		$db = Database::db()->connection;
+		$db = Database::db();
 		$didSomething = false;
 		
 		//check preconditions
@@ -588,7 +604,7 @@ HTML;
 		//interpret arguments
 		$post = $this->post;
 		$get  = $this->get;
-
+		
 		//set state from params
 		if(isset($get[$this->inPrefix . 'page']) && empty($post))
 		{
@@ -628,7 +644,7 @@ HTML;
 					Log::warn('DataTable delete button failed base64 decoding');
 					continue;
 				}
-				$key = json_decode($key);
+				$key = json_decode($key, true);
 				if($key === NULL)
 				{
 					Log::warn('DataTable delete button failed json decoding');
@@ -645,6 +661,14 @@ HTML;
 					Log::warn('DataTable delete button had wrong number of primary key values');
 					continue;
 				}
+				foreach($pk_values as $col => $val)
+				{
+					if(!in_array($this->fields[$col]->name, $this->pk))
+					{
+						Log::warn('DataTable delete button had key fields not part of the primary key.');
+						continue 2;
+					}
+				}
 				$deleteKeys[] = $pk_values;
 			}
 			elseif(mb_strpos($key,$callbackPrefix) === 0) //check for custom callback button
@@ -660,7 +684,7 @@ HTML;
 					Log::warn('DataTable callback button failed base64 decoding');
 					continue;
 				}
-				$key = json_decode($key);
+				$key = json_decode($key, true);
 				if($key === NULL)
 				{
 					Log::warn('DataTable callback button failed json decoding');
@@ -695,7 +719,7 @@ HTML;
 					Log::warn('DataTable edit parameter failed base64 decoding');
 					continue;
 				}
-				$key = json_decode($key);
+				$key = json_decode($key, true);
 				if($key === NULL)
 				{
 					Log::warn('DataTable edit parameter failed json decoding');
@@ -725,7 +749,7 @@ HTML;
 			}
 			elseif(mb_strpos($key,$newPrefix) === 0) //check for new row input
 			{
-				$col = mb_substr($key,mb_strlen($newPrefix));
+				$col = $this->table . '.' . mb_substr($key,mb_strlen($newPrefix));
 				if($this->fields[$col]->add !== true)
 				{
 					Log::warn('(DataTable) Tried to specify value for new row in field not editable in new rows');
@@ -741,23 +765,20 @@ HTML;
 			$query = '';
 			if($this->allow_delete === true)
 			{
-				$query = 'DELETE FROM ' . $this->table . ' WHERE ';
+				$query = 'DELETE FROM `' . $this->table . '` WHERE ';
 			}else{
-				$query = 'UPDATE ' . $this->table . ' SET ' . $this->allow_delete . '=0 WHERE ';
+				$query = 'UPDATE `' . $this->table . '` SET `' . $this->allow_delete . '`=0 WHERE ';
 			}
-			$pkNamed = array();
 			$conditions = array();
-			foreach($pk as $index => $value)
+			foreach($pk as $col => $value)
 			{
-				$col = $this->pk[$index];
-				$pkNamed[$col] = $value;
 				if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
 				{
 					$value = (int)$value;
 				}else{
-					$value = '"' . $db->real_escape_string($value) . '"';
+					$value = '"' . $db->esc($value) . '"';
 				}
-				$conditions[] = '`' . $db->real_escape_string($col) . '`=' . $value;
+				$conditions[] = $this->fields[$col]->fqName(true) . '=' . $value;
 			}
 			$conditions[] = $this->filter; //this line only allows deleting rows which match the filter
 			$query .= implode(' AND ', $conditions) . ' LIMIT 1;';
@@ -765,7 +786,7 @@ HTML;
 			if(isset($this->eventCallbacks->beforeDelete))
 			{
 				$cbFunc = $this->eventCallbacks->beforeDelete;
-				$cbRes = $cbFunc($pkNamed);
+				$cbRes = $cbFunc($pk);
 				if($cbRes !== true)
 				{
 					$this->outputMessage[] = $cbRes;
@@ -773,13 +794,12 @@ HTML;
 				}
 			}
 			
-			$res = $db->query($query);
+			$res = $db->query($query, [], 'deleting row via DataTable ' . $this->title);
 			if($res === false)
 			{
-				Log::warn('DataTable ' . $this->title . ': Bad query deleting row: ' . $query);
 				$this->outputMessage[] = 'Failed to delete row ' . htmlspecialchars(implode(',',$pk));
 			}else{
-				if($db->affected_rows == 0)
+				if($res == 0)
 				{
 					$this->outputMessage[] = 'Could not find row ' . htmlspecialchars(implode(',',$pk));
 				}else{
@@ -788,7 +808,7 @@ HTML;
 					if(isset($this->eventCallbacks->onDelete))
 					{
 						$cbFunc = $this->eventCallbacks->onDelete;
-						$msg_onDelete = $cbFunc($pkNamed);
+						$msg_onDelete = $cbFunc($pk);
 						if(!empty($msg_onDelete)) $this->outputMessage[] = $msg_onDelete;
 					}
 				}
@@ -799,8 +819,8 @@ HTML;
 		foreach($changesToSave as $pk => $vals) //for each row
 		{
 			Log::trace('Checking changes for row ' . $pk);
-			$pk = json_decode($pk);
-			$query = 'UPDATE `' . $this->table . '` SET ';
+			$pk = json_decode($pk, true);
+			$query = 'UPDATE `' . $this->table . '` ' . $this->joinString . 'SET ';
 			$setVals = array();
 
 			foreach($vals as $col => $value) //for each field in the row
@@ -829,10 +849,10 @@ HTML;
 					{
 						$value = (int)$value;
 					}else{
-						$value = '"' . $db->real_escape_string($value) . '"';
+						$value = '"' . $db->esc($value) . '"';
 					}
 				}
-				$setVals[] = '`' . $db->real_escape_string($col) . '`=' . $value;
+				$setVals[] = $this->fields[$col]->fqName(true) . '=' . $value;
 			}
 			
 			if(isset($this->eventCallbacks->beforeEdit))
@@ -846,31 +866,27 @@ HTML;
 				}
 			}
 
-			
 			$query .= implode(',', $setVals) . ' WHERE ';
-			$pkNamed = array();
 			$conditions = array();
-			foreach($pk as $index => $value)
+			foreach($pk as $col => $value)
 			{
-				$col = $this->pk[$index];
-				$pkNamed[$col] = $value;
 				if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
 				{
 					$value = (int)$value;
 				}else{
-					$value = '"' . $db->real_escape_string($value) . '"';
+					$value = '"' . $db->esc($value) . '"';
 				}
-				$conditions[] = '`' . $db->real_escape_string($col) . '`=' . $value;
+				$conditions[] = $this->fields[$col]->fqName(true) . '=' . $value;
 			}
 			$conditions[] = $this->filter; //this line only allows editing rows which match the filter
-			$query .= implode(' AND ', $conditions) . ' LIMIT 1;';
-			$res = $db->query($query);
+			$query .= implode(' AND ', $conditions);
+			if(empty($this->joinTables)) $query .= ' LIMIT 1;'; //Safety limit can only be used in single table mode per mysql syntax
+			$res = $db->query($query, [], 'updating row for DataTable ' . $this->title);
 			if($res === false)
 			{
-				Log::warn('DataTable ' . $this->title . ': Bad query updating row: ' . $query);
 				$this->outputMessage[] = 'Failed to update row ' . htmlspecialchars(implode(',',$pk));
 			}else{
-				if($db->affected_rows == 0)
+				if($res == 0)
 				{
 					$this->outputMessage[] = 'Could not find editable row for ' . htmlspecialchars(implode(',',$pk)) . ' or nothing was edited.';
 				}else{
@@ -879,7 +895,7 @@ HTML;
 					if(isset($this->eventCallbacks->onEdit))
 					{
 						$cbFunc = $this->eventCallbacks->onEdit;
-						$msg_onEdit = $cbFunc($pkNamed);
+						$msg_onEdit = $cbFunc($pk);
 						if(!empty($msg_onEdit)) $this->outputMessage[] = $msg_onEdit;
 					}
 				}
@@ -936,8 +952,9 @@ HTML;
 				$pk = array();
 				foreach($newRow as $col => $value)
 				{
-					if(in_array($col,$this->pk)) $pk[$col] = $value;
-					$setter = '`' . $col . '`=';
+					$colname = $this->fields[$col]->name;
+					if(in_array($colname,$this->pk)) $pk[$col] = $value;
+					$setter = '`' . $colname . '`=';
 					if($value == "")
 					{
 						$setter .= 'NULL';
@@ -946,20 +963,19 @@ HTML;
 						{
 							$setter .= (int)$value;
 						}else{
-							$setter .= '"' . $db->real_escape_string($value) . '"';
+							$setter .= '"' . $db->esc($value) . '"';
 						}
 					}
 					$setters[] = $setter;
 				}
 				$query .= implode(',', $setters);
-				$res = $db->query($query);
+				$res = $db->query($query, [], 'adding new row');
 				if($res === false)
 				{
-					$err = $db->error;
+					$err = $db->connection->error;
 					$this->outputMessage[] = 'Error adding new row: ' . $err;
-					Log::error('Bad SQL query adding new row: '  . $err . ' for query: ' . $query);
 				}else{
-					$insert_id = $db->insert_id;
+					$insert_id = $db->connection->insert_id;
 					$message = 'New row added successfully';
 					if($insert_id != 0)
 					{
@@ -1108,39 +1124,24 @@ HTML;
 	* 3. A string encoding the column name and the values of all the
 	*    primary-key-constituent columns in this row. This is essentially a
 	*    single serialized value for the PK even when the row has a compound PK
-	* @param colname The column name of the value that the input will be for
-	* @param row An associative array of all values in the corresponding row
+	* @param fieldBeingEdited The column name of the value that the input will be for (FQ)
+	* @param row An associative array of all values in the corresponding row (FQ indexed)
 	* @param type The type of input; edit/add
 	* @return a string to use as the ID of the html input
 	*/
-	protected function inputId($colname, $row, $type='edit')
+	protected function inputId($fieldBeingEdited, $row, $type='edit')
 	{
-		$out = array();
-		foreach($row as $col => $value)
+		foreach($row as $colFQ => $value)
 		{
-			$col = $this->realColName($col);
-			
-			if(in_array($col, $this->pk))
+			$colname = $this->fields[$colFQ]->name;
+			$table = $this->fields[$colFQ]->table;
+			if($table != $this->table || !in_array($colname, $this->pk))
 			{
-				$out[] = $value;
+				unset($row[$colFQ]);
 			}
 		}
-		return $this->inPrefix . $type . '_' . str_replace('=','',base64_encode(json_encode(array($colname,$out))));
-	}
-	
-	/**
-	* Find out the real name of the column if what you have is an alias
-	* Assumes the input is valid; invalid input will be returned unaltered
-	* @param col a "column name"; can be the real name or the given alias
-	* @return the real column name
-	*/
-	protected function realColName($col)
-	{
-		foreach($this->fields as $field)
-		{
-			if($field->alias == $col) return $field->name;
-		}
-		return $col;
+		return $this->inPrefix . $type . '_'
+			. str_replace('=','',base64_encode(json_encode([$fieldBeingEdited,$row])));
 	}
 	
 	/**

@@ -5,7 +5,7 @@ class DataTableField
 {
 	//Identification
 	public $name;            //Always required. If NULL, use these settings for fields not specified.
-	public $table = NULL;    //NULL = same as main table. Other tables will be LEFT JOINed in on the first foreign key found. For tables with no direct foreign key it will look for a many-to-many-relation table named maintable_othertable with appropriate foreign keys.
+	public $table;
 	public $alias = NULL;    //NULL = same as $name unless $table is specified in which case it will be $table.$name
 	//Where to use the field
 	public $show = true;
@@ -16,19 +16,19 @@ class DataTableField
 	//Presentation
 	public $outputFilter = NULL; //Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
 	
-	function __construct($name,
-	                     $table = NULL,
-						 $alias = NULL,
-						 $show = true,
-						 $edit = false,
-						 $add = NULL,
-						 $constraints = array(),
-						 $outputFilter = NULL)
+	function __construct(         $name,
+	                     string   $table,
+						          $alias = NULL,
+						 bool     $show = true,
+						 bool     $edit = false,
+						          $add = NULL,
+						 array    $constraints = array(),
+						 callable $outputFilter = NULL)
 	{
 		$this->name = $name;
 		$this->table = $table;
 		if($alias === NULL)
-			$this->determineAlias();
+			$this->alias = $this->fqName(false);
 		else
 			$this->alias = $alias;
 		$this->show = $show;
@@ -38,9 +38,10 @@ class DataTableField
 		$this->outputFilter = $outputFilter;
 	}
 	
-	function determineAlias()
+	function fqName(bool $quoted = false)
 	{
-		$this->alias = ($this->table === NULL) ? $this->name : ($this->table.'.'.$this->name);
+		$q = $quoted ? '`' : '';
+		return $q . $this->table . $q . '.' . $q . $this->name . $q;
 	}
 	
 	//schema

@@ -2,6 +2,7 @@
 namespace mls\ki;
 use \mls\ki\Config;
 use \mls\ki\Database;
+use \mls\ki\Security\Authenticator;
 
 class Log
 {
@@ -31,6 +32,7 @@ class Log
 		$dt = date('Y-m-d H:i:s');
 		$levelName = $level;
 		$url = Util::getUrl();
+		$user = (Authenticator::$user === NULL) ? '' : Authenticator::$user->id;
 		if(is_numeric($level)) $levelName = Log::levelName($level);
 		foreach(Log::$destinations as $dest)
 		{
@@ -41,7 +43,7 @@ class Log
 				switch($dest->type)
 				{
 					case 'file':
-					$map = array('when'=>$dt, 'level'=>$levelName, 'url'=>$url, 'user'=>'', 'message'=>$out);
+					$map = array('when'=>$dt, 'level'=>$levelName, 'url'=>$url, 'user'=>$user, 'message'=>$out);
 					$line = '';
 					switch($dest->format)
 					{
@@ -50,12 +52,12 @@ class Log
 						break;
 						
 						case 'html':
-						$line = htmlspecialchars($dt . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' User: ') . '<br/>' . "\n";
+						$line = htmlspecialchars($dt . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' User: ' . $user) . '<br/>' . "\n";
 						break;
 						
 						case 'plain':
 						default:
-						$line = $dt . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' User: ' . "\n";
+						$line = $dt . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' User: ' . $user . "\n";
 					}
 					file_put_contents($dest->address, $line, FILE_APPEND | LOCK_EX);
 					break;
@@ -72,7 +74,7 @@ class Log
 					
 					//put mail together
 					$mail = new \PHPMailer\PHPMailer\PHPMailer;
-					$map = array('when'=>$dt, 'level'=>$levelName, 'url'=>$url, 'user'=>'', 'message'=>$out);
+					$map = array('when'=>$dt, 'level'=>$levelName, 'url'=>$url, 'user'=>$user, 'message'=>$out);
 					switch($dest->format)
 					{
 						case 'json':
@@ -83,12 +85,12 @@ class Log
 						$mail->isHTML(true);
 						$mail->Body = $dt . ' [' . $levelName . ']<br/>'
 							. htmlspecialchars($out) . '<br/>URL: ' . $url . '<br/>User: ' . '<br/>';
-						$mail->AltBody = $dt . ' [' . $levelName . "]\n" . $out . "\nURL: " . $url . "\nUser: \n";
+						$mail->AltBody = $dt . ' [' . $levelName . "]\n" . $out . "\nURL: " . $url . "\nUser: " . $user . "\n";
 						break;
 						
 						case 'plain':
 						default:
-						$mail->Body = $dt . ' [' . $levelName . "]\n" . $out . "\nURL: " . $url . "\nUser: \n";
+						$mail->Body = $dt . ' [' . $levelName . "]\n" . $out . "\nURL: " . $url . "\nUser: " . $user . "\n";
 					}
 					
 					$mail->From = $from;
@@ -105,14 +107,14 @@ class Log
 						. '`when`="' . $dt . '",'
 						. '`level`="' . $db->real_escape_string($levelName) . '",'
 						. '`url`="' . $db->real_escape_string($url) . '",'
-						. '`user`="",'
+						. '`user`=' . $user . ','
 						. '`message`="' . $db->real_escape_string($out) . '"';
 					$db->query($query);
 					break;
 					
 					case 'syslog':
 					$pri = array_key_exists($levelName, $level2priority) ? $level2priority[$levelName] : $levelName;
-					$map = array('level'=>$levelName, 'url'=>$url, 'user'=>'', 'message'=>$out);
+					$map = array('level'=>$levelName, 'url'=>$url, 'user'=>$user, 'message'=>$out);
 					$line = '';
 					switch($dest->format)
 					{
@@ -123,7 +125,7 @@ class Log
 						case 'html':
 						case 'plain':
 						default:
-						$line = '[' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
+						$line = '[' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ' . $user;
 					}
 					openlog(Config::get()['general']['sitename'], LOG_NDELAY | LOG_PID, LOG_USER);
 					syslog($pri, $line);
@@ -131,7 +133,7 @@ class Log
 					break;
 					
 					case 'php':
-					$map = array('level'=>$levelName, 'url'=>$url, 'user'=>'', 'message'=>$out);
+					$map = array('level'=>$levelName, 'url'=>$url, 'user'=>$user, 'message'=>$out);
 					$line = '';
 					switch($dest->format)
 					{
@@ -142,13 +144,13 @@ class Log
 						case 'html':
 						case 'plain':
 						default:
-						$line = Config::get()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
+						$line = Config::get()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ' . $user;
 					}
 					error_log($line, 0);
 					break;
 					
 					case 'sapi':
-					$map = array('level'=>$levelName, 'url'=>$url, 'user'=>'', 'message'=>$out);
+					$map = array('level'=>$levelName, 'url'=>$url, 'user'=>$user, 'message'=>$out);
 					$line = '';
 					switch($dest->format)
 					{
@@ -159,7 +161,7 @@ class Log
 						case 'html':
 						case 'plain':
 						default:
-						$line = Config::get()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ';
+						$line = Config::get()['general']['sitename'] . ' [' . $levelName . '] ' . $out . ' URL: ' . $url . ' USER: ' . $user;
 					}
 					error_log($line, 4);
 					break;

@@ -45,3 +45,27 @@ function kiEnvIndClose()
 {
 	$('#ki_environmentIndicator').css('display','none');
 }
+
+//DataTable
+function ki_setEditVisibility(btn, inputValues)
+{
+	var buttonFields = btn.parent().parent().find('.ki_table_input').not('.ws-inputreplace');
+	var delBtn = btn.parent().parent().find('.ki_button_confirm_container');
+	for(var i = 0; i < buttonFields.length; i++)
+	{
+		var control = $(buttonFields[i]);
+		var changed = false;
+		if(control.attr('type') == "checkbox")
+		{
+			changed = (control.prop('checked') == true) != (inputValues[control.attr('id')] == true);
+		}else{
+			changed = control.prop('value') != inputValues[control.attr('id')];
+		}
+		if(changed)
+		{
+			btn.css("z-index","30");
+			return;
+		}
+	}
+	btn.css("z-index","5");
+}
