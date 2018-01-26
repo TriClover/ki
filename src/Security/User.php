@@ -4,6 +4,9 @@ use \mls\ki\Config;
 use \mls\ki\Database;
 use \mls\ki\Mail;
 use \mls\ki\Util;
+use \mls\ki\Widgets\DataTable;
+use \mls\ki\Widgets\DataTableField;
+use \mls\ki\Widgets\DataTableEventCallbacks;
 use \PHPMailer\PHPMailer\PHPMailer;
 
 /**
@@ -153,6 +156,75 @@ class User
 		                 $user['last_active'],
 		                 $user['lockout_until']);
 		return $ret;
+	}
+	
+	/**
+	* @return a DataTable that provides an admin interface for editing users.
+	*/
+	public static function getUserAdmin()
+	{
+		$addHashControls = function($cell, $type)
+		{
+			$out = '';
+			
+			if($type == 'edit')
+			{
+				$opts = '<select name="ki_hashAction">'
+				. '<option value="hash" selected>Hash</option>'
+				. '<option value="plain">Plaintext</option>'
+				. '</select>';
+				$out = $cell . ' ' . $opts;
+			}
+			elseif($type == 'add')
+			{
+				$opts = '<select name="ki_hashAction">'
+				. '<option value="hash">Hash</option>'
+				. '<option value="plain" selected>Plaintext</option>'
+				. '</select>';
+				$out = $cell . ' ' . $opts;
+			}else{
+				$out = '<span style="font-size:50%;">' . $cell . '</span>';
+			}
+			
+			return $out;
+		};
+		
+		$userFields = array();
+		$userFields[] = new DataTableField('id',            'ki_users', 'ID',             true, false, false);
+		$userFields[] = new DataTableField('username',      'ki_users', 'Username',       true, false, true );
+		$userFields[] = new DataTableField('email',         'ki_users', 'Email address',  true, true,  true );
+		$userFields[] = new DataTableField('email_verified','ki_users', 'Email verified?',true, true,  false);
+		$userFields[] = new DataTableField('password_hash', 'ki_users', 'Password',       true, true,  true, [], $addHashControls);
+		$userFields[] = new DataTableField('enabled',       'ki_users', 'Enabled?',       true, true,  true );
+		$userFields[] = new DataTableField('last_active',   'ki_users', 'Last Active',    true, false, false);
+		$userFields[] = new DataTableField('lockout_until', 'ki_users', 'Lockout Until:', true, true,  false);
+		
+		$beforeEdit = function(&$row)
+		{
+			$pol = Config::get()['policies'];
+			$pw = $row['ki_users.password_hash'];
+			switch($_POST['ki_hashAction'])
+			{
+				case 'plain':
+				if(mb_strlen($pw) == 60 && mb_substr_count($pw, '$') == 3)
+					return "Password was input as plaintext but looks like a hash. Not saved.";
+				if(!preg_match('/'.$pol['passwordRegex'].'/', $pw))
+					return 'Non-compliant password: ' . $pol['passwordRegexDescription'];
+				$row['ki_users.password_hash'] = \password_hash($row['ki_users.password_hash'], PASSWORD_BCRYPT);
+				break;
+				
+				case 'hash':
+				default:
+				if(mb_strlen($pw) != 60 || mb_substr_count($pw, '$') != 3)
+					return "Password was input as hash but doesn't look like a hash. Not saved.";
+			}
+			return true;
+		};
+	
+		$callbacks = new DataTableEventCallbacks(NULL, NULL, NULL, $beforeEdit, $beforeEdit, NULL);
+		$filter = 'username != "root"';
+		
+		return new DataTable('userAdmin','ki_users', $userFields, true, true, $filter, 50, true, false, false, false, $callbacks);
 	}
 }
 ?>

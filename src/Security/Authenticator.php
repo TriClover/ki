@@ -333,38 +333,6 @@ class Authenticator
 		// output length 128
 		return hash_pbkdf2('whirlpool', $input, $salt, 1000);
 	}
-	
-	/**
-	* @return a DataTable that provides an admin interface for editing users.
-	*/
-	public static function getUserEditingForm()
-	{
-		$userRow_hashPassword = function(&$row)
-		{
-			$row['password_hash'] = \password_hash($row['password_hash'], PASSWORD_BCRYPT);
-			return true;
-		};
-		
-		$formatPassField = function($text, $action)
-		{
-			if($action == 'show')
-				$text = '<span style="font-size:50%;">' . $text . '</span>';
-			if($action == 'add')
-				$text = str_replace('placeholder="password_hash"', 'placeholder="password"', $text);
-			return $text;
-		};
-			
-		$fields = array();
-		$fields[] = new DataTableField('id', NULL, NULL, true, false, false);
-		$fields[] = new DataTableField('username', NULL, NULL, true, true, true);
-		$fields[] = new DataTableField('email', NULL, NULL, true, true, true, array('type' => 'email'));
-		$fields[] = new DataTableField('email_verified', NULL, NULL, true, false, false);
-		$fields[] = new DataTableField('password_hash', NULL, NULL, true, false, true, array(), $formatPassField);
-		$fields[] = new DataTableField('enabled', NULL, NULL, true, true, true);
-		$fields[] = new DataTableField('last_active', NULL, NULL, true, false, NULL);
-		$events = new DataTableEventCallbacks(NULL, NULL, NULL, $userRow_hashPassword, NULL, NULL);
-		return new DataTable('users', 'ki_users', $fields, true, true, false, 50, false, false, false, false, $events, NULL);
-	}
 }
 
 ?>

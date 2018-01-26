@@ -375,7 +375,7 @@ class DataTable extends Form
 			{
 				if(!$this->fields[$col]->show) continue;
 				$value = htmlspecialchars($value);
-				$dataRow .= "\n    " . '<div>';
+				
 				$dataCell = '';
 				$cellType = NULL;
 				if($this->fields[$col]->edit)
@@ -390,6 +390,8 @@ class DataTable extends Form
 						if($value) $inputAttributes[] = 'checked="checked"';
 						$json_data[$inputName] = $value ? 1 : 0;
 					}else{
+						if($this->fields[$col]->constraints['type'] == 'datetime-local')
+							$value = str_replace(' ', 'T', $value);
 						$inputAttributes[] = 'value="' . $value . '" ';
 						$json_data[$inputName] = $value;
 					}
@@ -406,6 +408,13 @@ class DataTable extends Form
 					$filterFunc = $this->fields[$col]->outputFilter;
 					$dataCell = $filterFunc($dataCell, $cellType);
 				}
+				if($cellType == 'edit')
+				{
+					$dataRow .= "\n    " . '<div style="white-space:nowrap;">';
+				}else{
+					$dataRow .= "\n    " . '<div>';
+				}
+				
 				$dataRow .= $dataCell;
 				$dataRow .= "\n    " . '</div>';
 			}
@@ -823,6 +832,17 @@ HTML;
 			$query = 'UPDATE `' . $this->table . '` ' . $this->joinString . 'SET ';
 			$setVals = array();
 
+			if(isset($this->eventCallbacks->beforeEdit))
+			{
+				$cbFunc = $this->eventCallbacks->beforeEdit;
+				$cbRes = $cbFunc($vals);
+				if($cbRes !== true)
+				{
+					$this->outputMessage[] = $cbRes;
+					continue;
+				}
+			}
+			
 			foreach($vals as $col => $value) //for each field in the row
 			{
 				Log::trace('Checking field ' . $col);
@@ -855,17 +875,6 @@ HTML;
 				$setVals[] = $this->fields[$col]->fqName(true) . '=' . $value;
 			}
 			
-			if(isset($this->eventCallbacks->beforeEdit))
-			{
-				$cbFunc = $this->eventCallbacks->beforeEdit;
-				$cbRes = $cbFunc($vals);
-				if($cbRes !== true)
-				{
-					$this->outputMessage[] = $cbRes;
-					continue;
-				}
-			}
-
 			$query .= implode(',', $setVals) . ' WHERE ';
 			$conditions = array();
 			foreach($pk as $col => $value)
@@ -1152,8 +1161,8 @@ HTML;
 	{
 		if($type == 'tinyint(1)') return 'checkbox';
 		if(mb_strpos($type, 'int') !== false) return 'number';
+		if(mb_strpos($type, 'datetime') !== false) return 'datetime-local';
 		if(mb_strpos($type, 'date') !== false) return 'date';
-		if(mb_strpos($type, 'datetime') !== false) return 'datetime';
 		
 		return 'text';
 	}
