@@ -11,7 +11,7 @@ class SmPHP extends SetupModule
 	{
 		$requiredPHPVersion = '7.0.0';                     //PHP minimum acceptable version
 		$extensions = array('json', 'mysqli', 'mbstring'); //names of PHP extensions required by the code
-		$optionalExtensions = array('zip', 'xml', 'gd2');
+		$optionalExtensions = array('common', 'xml', 'gd');
 		
 		if(version_compare(PHP_VERSION, $requiredPHPVersion, '<'))
 		{
