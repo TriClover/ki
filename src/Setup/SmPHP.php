@@ -11,6 +11,7 @@ class SmPHP extends SetupModule
 	{
 		$requiredPHPVersion = '7.0.0';                     //PHP minimum acceptable version
 		$extensions = array('json', 'mysqli', 'mbstring'); //names of PHP extensions required by the code
+		$optionalExtensions = array('zip', 'xml', 'gd2');
 		
 		if(version_compare(PHP_VERSION, $requiredPHPVersion, '<'))
 		{
@@ -19,6 +20,7 @@ class SmPHP extends SetupModule
 			return SetupModule::FAILURE;
 		}
 		
+		//check critical extensions
 		$x_missing = array();
 		foreach($extensions as $e)
 		{
@@ -28,6 +30,18 @@ class SmPHP extends SetupModule
 		{
 			$this->msg = 'Some critical PHP extensions are missing: ' . implode(', ', $x_missing);
 			return SetupModule::FAILURE;
+		}
+		
+		//check optional extensions
+		$x_missing = array();
+		foreach($optionalExtensions as $e)
+		{
+			if(!extension_loaded($e)) $x_missing[] = $e;
+		}
+		if(!empty($x_missing))
+		{
+			$this->msg = 'Some PHP extensions needed for non-essential featuers are missing: ' . implode(', ', $x_missing);
+			return SetupModule::WARNING;
 		}
 		
 		$this->msg = 'PHP version and extensions OK.';

@@ -43,7 +43,8 @@ HTMLHEAD;
 		if($indicator)
 		{
 			$out .= '<div id="ki_environmentIndicator">Environment: '
-				. $env . ' &nbsp; <a id="ki_envind_close" href="javascript:kiEnvIndClose();">✘</a></div>';
+				. $env . ' &nbsp; <a id="ki_envind_close" href="javascript:kiEnvIndClose();">✘</a></div>'
+				. "\n";
 		}
 		
 		return $out;

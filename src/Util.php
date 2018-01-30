@@ -34,7 +34,12 @@ class Util
 	}
 
 	/**
-	* Convert any arbitrarily structured data to a string
+	* Convert any arbitrarily structured data to a string for debug purposes
+	* The format is similar to "var_dump"
+	* @param in The input data
+	* @param html Whether to add the necessary bits for correct display when the output is interpreted as HTML. Doesn't add any fancy visual formatting.
+	* @param indentLevel how deep to start indenting, 0 is usually where you want to start
+	* @return the data in string form
 	*/
 	public static function toString($in, $html = false, $indentLevel = 0)
 	{

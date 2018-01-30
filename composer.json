@@ -5,6 +5,7 @@
 	"require": {
 		"albertofem/rsync-lib": "dev-master",
 		"phpmailer/phpmailer": ">=6.0.0rc5",
+		"phpoffice/phpspreadsheet": "dev-master",
 		"php": ">=7.0.0"
 	},
     "autoload": {

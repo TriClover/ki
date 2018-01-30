@@ -1,6 +1,7 @@
 <?php
 namespace mls\ki\Widgets;
 use \mls\ki\Database;
+use \mls\ki\Exporter;
 use \mls\ki\Log;
 use \mls\ki\Util;
 
@@ -18,7 +19,7 @@ class DataTable extends Form
 	protected $allow_delete;     //true: allow deleting rows. false: don't. string: allow but set this field=false (table.field) instead of actually deleting
 	protected $filter;           //if string, use as sql fragment in where clause to filter output: useful if table has "enabled" field.
 	protected $rows_per_page;
-	protected $show_exports;     //true: show all export buttons. false: don't. array: show only specified formats (xlsx,xls,csv,xml,json,sql)
+	protected $show_exports;     //true: show all export buttons. false: don't. array: show only specified formats (xlsx,csv,xml,json,sql)
 	protected $show_querybuilder;//allow filtering, sorting, etc
 	protected $show_querylist;   //allow loading queries. if $show_querybuilder is false you only see the results and not the conditions
 	protected $show_querysave;   //allow saving queries. Only works if $show_querybuilder and $show_querylist are true.
@@ -60,7 +61,7 @@ class DataTable extends Form
 	                     $allow_delete      = false,
 	                     $filter            = false,
 	                     $rows_per_page     = 50,
-	                     $show_exports      = false, //todo
+	                     $show_exports      = false,
 	                     $show_querybuilder = false, //todo
 	                     $show_querylist    = false, //todo
 	                     $show_querysave    = false, //todo
@@ -300,9 +301,6 @@ class DataTable extends Form
 		//check preconditions
 		if(!$this->setupOK) return '';
 		
-		//process state info
-		$limit_start = $this->rows_per_page * ($this->page-1);
-		
 		//process parameters
 		//shown fields
 		if(!$this->allow_show)
@@ -310,16 +308,10 @@ class DataTable extends Form
 			Log::warn('DataTable: No fields were selected to be shown');
 			return '';
 		}
-		$fields = array(); //query snippets listing each real field and its alias if any
-		foreach($this->fields as $field)
-		{
-			$fields[] = $field->fqName(true) . ' AS "' . $field->alias . '"';
-		}
-		$fields = implode(',', $fields);
-		
+
 		//get data
 		$db = Database::db();
-		$query = 'SELECT SQL_CALC_FOUND_ROWS ' . $fields . ' FROM ' . $this->table . ' ' . $this->joinString . ' WHERE ' . $this->filter . ' LIMIT ' . $limit_start . ',' . $this->rows_per_page;
+		$query = $this->buildQuery(true);
 		$res = $db->query($query, [], 'main data-displaying query for DataTable ' . $this->title);
 		if($res === false) return '';
 		$query = 'SELECT FOUND_ROWS() AS total';
@@ -332,33 +324,51 @@ class DataTable extends Form
 		
 		//generate html
 		$out = '';
+		$pageInput = '<input type="hidden" name="' . $this->inPrefix . 'page' . '" value="' . $this->page . '"/>';
+		$out .= '<div style="text-align:center;display:inline-block;">';
 		
 		//feedback on previous submit
 		$this->outputMessage = array_filter($this->outputMessage);
+		$outMsgStr = '<div style="text-align:left;">';
 		if(!empty($this->outputMessage))
 		{
-			$out .= '<ul>';
-			foreach($this->outputMessage as $retmsg) $out .= '<li>' . $retmsg . '</li>';
-			$out .= '</ul>';
+			$outMsgStr .= '<ul>';
+			foreach($this->outputMessage as $retmsg) $outMsgStr .= '<li>' . $retmsg . '</li>';
+			$outMsgStr .= '</ul>';
+		}else{
+			$outMsgStr .= '&nbsp;';
+		}
+		$outMsgStr .= '</div>';
+		$out .= $outMsgStr;
+		
+		//Exports
+		if($this->show_exports)
+		{
+			$out .= '<form style="float:right;margin-top:-1em;" method="post">'
+				. '<select name="' . $this->inPrefix . '_format"><option value="CSV">CSV</option></select> '
+				. '<input type="submit" name="' . $this->inPrefix . '_export" value="⤓" style="font-size:120%;border:0;width:20px;height:20px;font-weight:bold;padding:0;vertical:align:bottom;position:relative;top:2px;" title="Export"/>'
+				. '&nbsp; </form>';
 		}
 		
 		//rows to display and/or edit
-		$pageInput = '<input type="hidden" name="' . $this->inPrefix . 'page' . '" value="' . $this->page . '"/>';
-		$out .= '<div style="text-align:center;display:inline-block;">';
 		$out .= "\n" . '  <div class="ki_table">';
 		if($this->rows_per_page > 0) //for add-only forms with no output, skip showing headers. The field names are in the placeholders anyway.
 		{
-			$out .= "\n" . '   <div>';
+			$headerRow = "\n" . '   <div>';
 			//data column headers
 			foreach($this->fields as $field)
 			{
-				if($field->show) $out .= "\n" . '    <div>' . $field->alias . '</div>';
+				if($field->show) $headerRow .= "\n" . '    <div>' . $field->alias . '</div>';
 			}
 			//add/save/delete button column header
-			if($this->allow_edit || $this->allow_add || ($this->allow_delete !== false)) $out .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
+			if($this->allow_edit || $this->allow_add || ($this->allow_delete !== false))
+				$headerRow .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
 			//custom callback column header
-			if(!empty($this->buttonCallbacks)) $out .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
-			$out .= "\n" . '   </div>';
+			if(!empty($this->buttonCallbacks))
+				$headerRow .= "\n" . '    <div class="ki_table_action">&nbsp;</div>';
+			$headerRow .= "\n" . '   </div>';
+			
+			$out .= $headerRow;
 		}
 		$json_data = array();
 		foreach($res as $row)
@@ -528,6 +538,20 @@ HTML;
 		return $out;
 	}
 	
+	private function buildQuery(bool $limit = true)
+	{
+		$limit_start = $this->rows_per_page * ($this->page-1);
+		$fields = array(); //query snippets listing each real field and its alias if any
+		foreach($this->fields as $field)
+		{
+			$fields[] = $field->fqName(true) . ' AS "' . $field->alias . '"';
+		}
+		$fields = implode(',', $fields);
+		$query = 'SELECT ' . ($limit?'SQL_CALC_FOUND_ROWS ':'') . $fields . ' FROM ' . $this->table . ' ' . $this->joinString . ' WHERE ' . $this->filter;
+		if($limit) $query .=  ' LIMIT ' . $limit_start . ',' . $this->rows_per_page;
+		return $query;
+	}
+	
 	/**
 	* @param col any column name (FQ)
 	* @return an array of html5 validation constraints that apply to it including the type attribute
@@ -623,6 +647,32 @@ HTML;
 		}
 		Log::trace('DataTable ' . $this->title . ' done checking for GET, continuing to POST');
 		if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
+		
+		//Export immediately triggers output and halt
+		if($this->show_exports
+			&& isset($post[$this->inPrefix.'_export'])
+			&& method_exists('\mls\ki\Exporter',$post[$this->inPrefix.'_format']))
+		{
+			$extension = '';
+			$query = $this->buildQuery(false);
+			$data = $db->query($query, [], 'getting data for export by DataTable');
+			if(!empty($data)) array_unshift($data, array_keys($data[0]));
+			switch($post[$this->inPrefix.'_format'])
+			{
+				case 'CSV':
+				$data = Exporter::CSV($data, true);
+				$extension = 'csv';
+				break;
+			}
+			if(!empty($extension))
+			{
+				header('Content-Type: application/octet-stream');
+				header('Content-Transfer-Encoding: Binary');
+				header('Content-disposition: attachment; filename="' . $this->table . '.' . $extension . '"');
+				echo $data;
+				exit;
+			}
+		}
 		
 		//interpret and verify edits to save
 		$editPrefix = $this->inPrefix . 'edit_';
