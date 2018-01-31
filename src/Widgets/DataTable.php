@@ -345,7 +345,7 @@ class DataTable extends Form
 		if($this->show_exports)
 		{
 			$out .= '<form style="float:right;margin-top:-1em;" method="post">'
-				. '<select name="' . $this->inPrefix . '_format"><option value="CSV">CSV</option></select> '
+				. '<select name="' . $this->inPrefix . '_format"><option value="CSV">CSV</option><option value="XLSX">Excel</option><option value="ODS">OpenOffice</option></select> '
 				. '<input type="submit" name="' . $this->inPrefix . '_export" value="⤓" style="font-size:120%;border:0;width:20px;height:20px;font-weight:bold;padding:0;vertical:align:bottom;position:relative;top:2px;" title="Export"/>'
 				. '&nbsp; </form>';
 		}
@@ -662,6 +662,16 @@ HTML;
 				case 'CSV':
 				$data = Exporter::CSV($data, true);
 				$extension = 'csv';
+				break;
+				
+				case 'XLSX':
+				$data = Exporter::XLSX($data);
+				$extension = 'xlsx';
+				break;
+				
+				case 'ODS':
+				$data = Exporter::ODS($data);
+				$extension = 'ods';
 				break;
 			}
 			if(!empty($extension))
