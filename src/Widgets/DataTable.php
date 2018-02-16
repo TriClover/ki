@@ -34,6 +34,7 @@ class DataTable extends Form
 	protected $joinTables = array();
 	protected $joinString;
 	protected $alias2fq = array(); //keys = aliases of all fields, values = unquoted FQ field names
+	protected $queryBuilder = NULL;
 	
 	//schema
 	protected $pk = array();   //fields that are in the primary key
@@ -62,7 +63,7 @@ class DataTable extends Form
 	                     $filter            = false,
 	                     $rows_per_page     = 50,
 	                     $show_exports      = false,
-	                     $show_querybuilder = false, //todo
+	                     $show_querybuilder = false,
 	                     $show_querylist    = false, //todo
 	                     $show_querysave    = false, //todo
 						 $eventCallbacks    = NULL,
@@ -289,6 +290,9 @@ class DataTable extends Form
 				$this->allow_delete = false;
 			}
 		}
+		
+		//create query builder
+		$this->queryBuilder = new QueryBuilder($this->fields, $this->title);
 	}
 	
 	/**
@@ -327,6 +331,13 @@ class DataTable extends Form
 		$pageInput = '<input type="hidden" name="' . $this->inPrefix . 'page' . '" value="' . $this->page . '"/>';
 		$out .= '<div style="text-align:center;display:inline-block;">';
 		
+		//query builder
+		if($this->show_querybuilder)
+		{
+			$out .= $this->queryBuilder->getHTML();
+			$out .= '<br clear="both"/>';
+		}
+
 		//feedback on previous submit
 		$this->outputMessage = array_filter($this->outputMessage);
 		$outMsgStr = '<div style="text-align:left;">';
@@ -346,7 +357,7 @@ class DataTable extends Form
 		{
 			$out .= '<form style="float:right;margin-top:-1em;" method="post">'
 				. '<select name="' . $this->inPrefix . '_format"><option value="CSV">CSV</option><option value="XLSX">Excel</option><option value="ODS">OpenOffice</option></select> '
-				. '<input type="submit" name="' . $this->inPrefix . '_export" value="⤓" style="font-size:120%;border:0;width:20px;height:20px;font-weight:bold;padding:0;vertical:align:bottom;position:relative;top:2px;" title="Export"/>'
+				. '<input type="submit" name="' . $this->inPrefix . '_export" value="⤓" style="font-size:120%;border:0;width:20px;height:20px;font-weight:bold;padding:0;vertical-align:bottom;position:relative;top:2px;" title="Export"/>'
 				. '&nbsp; </form>';
 		}
 		
@@ -460,7 +471,9 @@ class DataTable extends Form
 				}
 				$dataRow .= "\n" . '    </div>';
 			}
-			$out .= "\n" . '   <form method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">' . $dataRow . "\n" . '   </form>';
+			$out .= "\n" . '   <form method="post" action="' . $_SERVER['SCRIPT_NAME'] . '">'
+				. ($this->show_querybuilder ? ('<input type="hidden" name="ki_querybuilder_' . $this->title . '_filterResult" value="' . htmlspecialchars($this->queryBuilder->previousResultJSON) . '"/>') : '')
+				. $dataRow . "\n" . '   </form>';
 		}
 		
 		//add new row
@@ -509,7 +522,7 @@ class DataTable extends Form
 				$out .= $addingCell;
 				$out .= "\n    " . '</div>';
 			}
-			$out .= "\n    " . '<div class="ki_table_action">' . "\n     " . $pageInput . "\n     " . '<input type="submit" title="Add" value="+" class="ki_button_add"/>' . "\n    " . '</div>';
+			$out .= "\n    " . '<div class="ki_table_action">' . "\n     " . $pageInput . "\n     " . '<input type="submit" title="Add" value="✚" class="ki_button_add"/>' . "\n    " . '</div>';
 			$out .= "\n   " . '</form>';
 		}
 		$out .= "\n" . '  </div>';
@@ -546,8 +559,33 @@ HTML;
 		{
 			$fields[] = $field->fqName(true) . ' AS "' . $field->alias . '"';
 		}
+		
+		$sortClause = '';
+		$userFilter = NULL;
+		if($this->queryBuilder !== NULL && $this->queryBuilder->previousResult !== NULL)
+		{
+			if(!empty($this->queryBuilder->previousResult->sortOrder))
+			{
+				$sortClause = [];
+				foreach($this->queryBuilder->previousResult->sortOrder as $alias => $direction)
+				{
+					$sortClause[] = '`' . $alias . '` ' . ($direction == 'A' ? 'ASC' : 'DESC');
+				}
+				$sortClause = ' ORDER BY ' . implode(',', $sortClause);
+			}
+			
+			$userFilter = $this->queryBuilder->previousResult->getFilterSQL();
+		}
+		
+		$whereClause = [];
+		if(!empty($this->filter)) $whereClause[] = '(' . $this->filter . ')';
+		if(!empty($userFilter)  ) $whereClause[] = $userFilter;
+		$whereClause = implode(' AND ', $whereClause);
+		if(!empty($whereClause)) $whereClause = ' WHERE ' . $whereClause;
+		
 		$fields = implode(',', $fields);
-		$query = 'SELECT ' . ($limit?'SQL_CALC_FOUND_ROWS ':'') . $fields . ' FROM ' . $this->table . ' ' . $this->joinString . ' WHERE ' . $this->filter;
+		$query = 'SELECT ' . ($limit?'SQL_CALC_FOUND_ROWS ':'') . $fields
+			. ' FROM ' . $this->table . ' ' . $this->joinString . $whereClause . $sortClause;
 		if($limit) $query .=  ' LIMIT ' . $limit_start . ',' . $this->rows_per_page;
 		return $query;
 	}
@@ -639,434 +677,466 @@ HTML;
 		$get  = $this->get;
 		
 		//set state from params
+		$shouldCheckPost = true;
 		if(isset($get[$this->inPrefix . 'page']) && empty($post))
 		{
 			Log::trace('DataTable ' . $this->title . ' found GET and no POST');
 			$this->page = (int)$get[$this->inPrefix . 'page'];
-			return false; //if GET was used, don't process POST
-		}
-		Log::trace('DataTable ' . $this->title . ' done checking for GET, continuing to POST');
-		if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
-		
-		//Export immediately triggers output and halt
-		if($this->show_exports
-			&& isset($post[$this->inPrefix.'_export'])
-			&& method_exists('\mls\ki\Exporter',$post[$this->inPrefix.'_format']))
-		{
-			$extension = '';
-			$query = $this->buildQuery(false);
-			$data = $db->query($query, [], 'getting data for export by DataTable');
-			if(!empty($data)) array_unshift($data, array_keys($data[0]));
-			switch($post[$this->inPrefix.'_format'])
-			{
-				case 'CSV':
-				$data = Exporter::CSV($data, true);
-				$extension = 'csv';
-				break;
-				
-				case 'XLSX':
-				$data = Exporter::XLSX($data);
-				$extension = 'xlsx';
-				break;
-				
-				case 'ODS':
-				$data = Exporter::ODS($data);
-				$extension = 'ods';
-				break;
-			}
-			if(!empty($extension))
-			{
-				header('Content-Type: application/octet-stream');
-				header('Content-Transfer-Encoding: Binary');
-				header('Content-disposition: attachment; filename="' . $this->table . '.' . $extension . '"');
-				echo $data;
-				exit;
-			}
+			$shouldCheckPost = false; //if GET was used, don't process POST
 		}
 		
-		//interpret and verify edits to save
-		$editPrefix = $this->inPrefix . 'edit_';
-		$changesToSave = array();
-		$newPrefix = $this->inPrefix . 'new_';
-		$newRow = array();
-		$deletePrefix = $this->inPrefix . 'delete_';
-		$deleteKeys = array();
-		$callbackPrefix = $this->inPrefix . 'callback_';
-		foreach($post as $key => $value)
+		if($shouldCheckPost)
 		{
-			if(mb_strpos($key,$deletePrefix) === 0) //check for delete button
-			{
-				if($this->allow_delete === false)
-				{
-					Log::warn('DataTable: Tried to delete a row but deleting is not allowed');
-					continue;
-				}
-				elseif($this->allow_delete !== true && !isset($this->fields[$this->allow_delete]))
-				{
-					Log::error("DataTable: Tried to delete a row but deactivation field doesn't exist");
-					continue;
-				}
-				$key = mb_substr($key,mb_strlen($deletePrefix));
-				$key = base64_decode($key);
-				if($key === false)
-				{
-					Log::warn('DataTable delete button failed base64 decoding');
-					continue;
-				}
-				$key = json_decode($key, true);
-				if($key === NULL)
-				{
-					Log::warn('DataTable delete button failed json decoding');
-					continue;
-				}
-				if(count($key) != 2)
-				{
-					Log::warn('DataTable delete button had wrong number of root elements');
-					continue;
-				}
-				$pk_values = $key[1];
-				if(count($pk_values) != count($this->pk))
-				{
-					Log::warn('DataTable delete button had wrong number of primary key values');
-					continue;
-				}
-				foreach($pk_values as $col => $val)
-				{
-					if(!in_array($this->fields[$col]->name, $this->pk))
-					{
-						Log::warn('DataTable delete button had key fields not part of the primary key.');
-						continue 2;
-					}
-				}
-				$deleteKeys[] = $pk_values;
-			}
-			elseif(mb_strpos($key,$callbackPrefix) === 0) //check for custom callback button
-			{
-				$cbName = $value;
-				$key = mb_substr($key,mb_strlen($callbackPrefix));
-				$cbFunc = mb_substr($key,0,mb_strpos($key,'_'));
-				$key = mb_substr($key,mb_strlen($cbFunc)+1);
-				
-				$key = base64_decode($key);
-				if($key === false)
-				{
-					Log::warn('DataTable callback button failed base64 decoding');
-					continue;
-				}
-				$key = json_decode($key, true);
-				if($key === NULL)
-				{
-					Log::warn('DataTable callback button failed json decoding');
-					continue;
-				}
-				if(count($key) != 2)
-				{
-					Log::warn('DataTable callback button had wrong number of root elements');
-					continue;
-				}
-				$pk_values = $key[1];
-				if(count($pk_values) != count($this->pk))
-				{
-					Log::warn('DataTable callback button had wrong number of primary key values');
-					continue;
-				}
-				if(!isset($this->buttonCallbacks[$cbName]) || $this->buttonCallbacks[$cbName] != $cbFunc)
-				{
-					Log::warn('DataTable callback button specificed invalid function/name: ' . $cbName . ',' . $cbFunc);
-					continue;
-				}
-				$pkNamed = array();
-				foreach($this->pk as $index => $pname) $pkNamed[$pname] = $pk_values[$index];
-				$cbFunc($pkNamed);
-			}
-			elseif(mb_strpos($key,$editPrefix) === 0) //check for edit input
-			{
-				$key = substr($key,mb_strlen($editPrefix));
-				$key = base64_decode($key);
-				if($key === false)
-				{
-					Log::warn('DataTable edit parameter failed base64 decoding');
-					continue;
-				}
-				$key = json_decode($key, true);
-				if($key === NULL)
-				{
-					Log::warn('DataTable edit parameter failed json decoding');
-					continue;
-				}
-				if(count($key) != 2)
-				{
-					Log::warn('DataTable edit parameter had wrong number of root elements');
-					continue;
-				}
-				$col = $key[0];
-				$pk_values = $key[1];
-				if(!isset($post[$this->inputId('0', $pk_values, 'submit')])) continue; //skip if save wasn't clicked
-				if(count($pk_values) != count($this->pk))
-				{
-					Log::warn('DataTable edit parameter had wrong number of primary key values');
-					continue;
-				}
-				$pk_values = json_encode($pk_values);
-				if(!$this->fields[$col]->edit)
-				{
-					Log::warn('Tried to edit non-editable field');
-					continue;
-				}
-				if(!isset($changesToSave[$pk_values])) $changesToSave[$pk_values] = array();
-				$changesToSave[$pk_values][$col] = $value;
-			}
-			elseif(mb_strpos($key,$newPrefix) === 0) //check for new row input
-			{
-				$col = $this->table . '.' . mb_substr($key,mb_strlen($newPrefix));
-				if($this->fields[$col]->add !== true)
-				{
-					Log::warn('(DataTable) Tried to specify value for new row in field not editable in new rows');
-					continue;
-				}
-				$newRow[$col] = $value;
-			}
-		}
-		
-		//handle deletes
-		foreach($deleteKeys as $pk)
-		{
-			$query = '';
-			if($this->allow_delete === true)
-			{
-				$query = 'DELETE FROM `' . $this->table . '` WHERE ';
-			}else{
-				$query = 'UPDATE `' . $this->table . '` SET `' . $this->allow_delete . '`=0 WHERE ';
-			}
-			$conditions = array();
-			foreach($pk as $col => $value)
-			{
-				if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
-				{
-					$value = (int)$value;
-				}else{
-					$value = '"' . $db->esc($value) . '"';
-				}
-				$conditions[] = $this->fields[$col]->fqName(true) . '=' . $value;
-			}
-			$conditions[] = $this->filter; //this line only allows deleting rows which match the filter
-			$query .= implode(' AND ', $conditions) . ' LIMIT 1;';
+			if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
 			
-			if(isset($this->eventCallbacks->beforeDelete))
+			//Export immediately triggers output and halt
+			if($this->show_exports
+				&& isset($post[$this->inPrefix.'_export'])
+				&& method_exists('\mls\ki\Exporter',$post[$this->inPrefix.'_format']))
 			{
-				$cbFunc = $this->eventCallbacks->beforeDelete;
-				$cbRes = $cbFunc($pk);
-				if($cbRes !== true)
+				$extension = '';
+				$query = $this->buildQuery(false);
+				$data = $db->query($query, [], 'getting data for export by DataTable');
+				if(!empty($data)) array_unshift($data, array_keys($data[0]));
+				switch($post[$this->inPrefix.'_format'])
 				{
-					$this->outputMessage[] = $cbRes;
-					continue;
+					case 'CSV':
+					$data = Exporter::CSV($data, true);
+					$extension = 'csv';
+					break;
+					
+					case 'XLSX':
+					$data = Exporter::XLSX($data);
+					$extension = 'xlsx';
+					break;
+					
+					case 'ODS':
+					$data = Exporter::ODS($data);
+					$extension = 'ods';
+					break;
+				}
+				if(!empty($extension))
+				{
+					header('Content-Type: application/octet-stream');
+					header('Content-Transfer-Encoding: Binary');
+					header('Content-disposition: attachment; filename="' . $this->table . '.' . $extension . '"');
+					echo $data;
+					exit;
 				}
 			}
 			
-			$res = $db->query($query, [], 'deleting row via DataTable ' . $this->title);
-			if($res === false)
+			//interpret and verify edits to save
+			$editPrefix = $this->inPrefix . 'edit_';
+			$changesToSave = array();
+			$newPrefix = $this->inPrefix . 'new_';
+			$newRow = array();
+			$deletePrefix = $this->inPrefix . 'delete_';
+			$deleteKeys = array();
+			$callbackPrefix = $this->inPrefix . 'callback_';
+			foreach($post as $key => $value)
 			{
-				$this->outputMessage[] = 'Failed to delete row ' . htmlspecialchars(implode(',',$pk));
-			}else{
-				if($res == 0)
+				if(mb_strpos($key,$deletePrefix) === 0) //check for delete button
 				{
-					$this->outputMessage[] = 'Could not find row ' . htmlspecialchars(implode(',',$pk));
-				}else{
-					$this->outputMessage[] = 'Successfully ' . (($this->allow_delete === true) ? 'deleted' : 'disabled') . ' row ' . htmlspecialchars(implode(',',$pk));
-					$didSomething = true;
-					if(isset($this->eventCallbacks->onDelete))
+					if($this->allow_delete === false)
 					{
-						$cbFunc = $this->eventCallbacks->onDelete;
-						$msg_onDelete = $cbFunc($pk);
-						if(!empty($msg_onDelete)) $this->outputMessage[] = $msg_onDelete;
+						Log::warn('DataTable: Tried to delete a row but deleting is not allowed');
+						continue;
 					}
+					elseif($this->allow_delete !== true && !isset($this->fields[$this->allow_delete]))
+					{
+						Log::error("DataTable: Tried to delete a row but deactivation field doesn't exist");
+						continue;
+					}
+					$key = mb_substr($key,mb_strlen($deletePrefix));
+					$key = base64_decode($key);
+					if($key === false)
+					{
+						Log::warn('DataTable delete button failed base64 decoding');
+						continue;
+					}
+					$key = json_decode($key, true);
+					if($key === NULL)
+					{
+						Log::warn('DataTable delete button failed json decoding');
+						continue;
+					}
+					if(count($key) != 2)
+					{
+						Log::warn('DataTable delete button had wrong number of root elements');
+						continue;
+					}
+					$pk_values = $key[1];
+					if(count($pk_values) != count($this->pk))
+					{
+						Log::warn('DataTable delete button had wrong number of primary key values');
+						continue;
+					}
+					foreach($pk_values as $col => $val)
+					{
+						if(!in_array($this->fields[$col]->name, $this->pk))
+						{
+							Log::warn('DataTable delete button had key fields not part of the primary key.');
+							continue 2;
+						}
+					}
+					$deleteKeys[] = $pk_values;
 				}
-			}
-		}
-		
-		//query for saving edits
-		foreach($changesToSave as $pk => $vals) //for each row
-		{
-			Log::trace('Checking changes for row ' . $pk);
-			$pk = json_decode($pk, true);
-			$query = 'UPDATE `' . $this->table . '` ' . $this->joinString . 'SET ';
-			$setVals = array();
-
-			if(isset($this->eventCallbacks->beforeEdit))
-			{
-				$cbFunc = $this->eventCallbacks->beforeEdit;
-				$cbRes = $cbFunc($vals);
-				if($cbRes !== true)
+				elseif(mb_strpos($key,$callbackPrefix) === 0) //check for custom callback button
 				{
-					$this->outputMessage[] = $cbRes;
-					continue;
+					$cbName = $value;
+					$key = mb_substr($key,mb_strlen($callbackPrefix));
+					$cbFunc = mb_substr($key,0,mb_strpos($key,'_'));
+					$key = mb_substr($key,mb_strlen($cbFunc)+1);
+					
+					$key = base64_decode($key);
+					if($key === false)
+					{
+						Log::warn('DataTable callback button failed base64 decoding');
+						continue;
+					}
+					$key = json_decode($key, true);
+					if($key === NULL)
+					{
+						Log::warn('DataTable callback button failed json decoding');
+						continue;
+					}
+					if(count($key) != 2)
+					{
+						Log::warn('DataTable callback button had wrong number of root elements');
+						continue;
+					}
+					$pk_values = $key[1];
+					if(count($pk_values) != count($this->pk))
+					{
+						Log::warn('DataTable callback button had wrong number of primary key values');
+						continue;
+					}
+					if(!isset($this->buttonCallbacks[$cbName]) || $this->buttonCallbacks[$cbName] != $cbFunc)
+					{
+						Log::warn('DataTable callback button specificed invalid function/name: ' . $cbName . ',' . $cbFunc);
+						continue;
+					}
+					$pkNamed = array();
+					foreach($this->pk as $index => $pname) $pkNamed[$pname] = $pk_values[$index];
+					$cbFunc($pkNamed);
+				}
+				elseif(mb_strpos($key,$editPrefix) === 0) //check for edit input
+				{
+					$key = substr($key,mb_strlen($editPrefix));
+					$key = base64_decode($key);
+					if($key === false)
+					{
+						Log::warn('DataTable edit parameter failed base64 decoding');
+						continue;
+					}
+					$key = json_decode($key, true);
+					if($key === NULL)
+					{
+						Log::warn('DataTable edit parameter failed json decoding');
+						continue;
+					}
+					if(count($key) != 2)
+					{
+						Log::warn('DataTable edit parameter had wrong number of root elements');
+						continue;
+					}
+					$col = $key[0];
+					$pk_values = $key[1];
+					if(!isset($post[$this->inputId('0', $pk_values, 'submit')])) continue; //skip if save wasn't clicked
+					if(count($pk_values) != count($this->pk))
+					{
+						Log::warn('DataTable edit parameter had wrong number of primary key values');
+						continue;
+					}
+					$pk_values = json_encode($pk_values);
+					if(!$this->fields[$col]->edit)
+					{
+						Log::warn('Tried to edit non-editable field');
+						continue;
+					}
+					if(!isset($changesToSave[$pk_values])) $changesToSave[$pk_values] = array();
+					$changesToSave[$pk_values][$col] = $value;
+				}
+				elseif(mb_strpos($key,$newPrefix) === 0) //check for new row input
+				{
+					$col = $this->table . '.' . mb_substr($key,mb_strlen($newPrefix));
+					if($this->fields[$col]->add !== true)
+					{
+						Log::warn('(DataTable) Tried to specify value for new row in field not editable in new rows');
+						continue;
+					}
+					$newRow[$col] = $value;
 				}
 			}
 			
-			foreach($vals as $col => $value) //for each field in the row
+			//handle deletes
+			foreach($deleteKeys as $pk)
 			{
-				Log::trace('Checking field ' . $col);
-				$alias = $this->fields[$col]->alias;
-				$constraintsPass = true;
-				foreach($this->fields[$col]->constraints as $cname => $cval) //for each html5 constraint applying to the column
+				$query = '';
+				if($this->allow_delete === true)
 				{
-					Log::trace('Checking constraint ' . $cname);
-					$conres = $this->checkConstraint($cname, $cval, $value, $alias);
-					if($conres !== true)
-					{
-						$constraintsPass = false;
-						$this->outputMessage[] = $conres;
-						break;
-					}
-				}
-				if(!$constraintsPass) continue;
-				Log::trace('Constraints passed.');
-				if($value == "")
-				{
-					$value = 'NULL';
+					$query = 'DELETE FROM `' . $this->table . '` WHERE ';
 				}else{
+					$query = 'UPDATE `' . $this->table . '` SET `' . $this->allow_delete . '`=0 WHERE ';
+				}
+				$conditions = array();
+				foreach($pk as $col => $value)
+				{
 					if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
 					{
 						$value = (int)$value;
 					}else{
 						$value = '"' . $db->esc($value) . '"';
 					}
+					$conditions[] = $this->fields[$col]->fqName(true) . '=' . $value;
 				}
-				$setVals[] = $this->fields[$col]->fqName(true) . '=' . $value;
+				$conditions[] = $this->filter; //this line only allows deleting rows which match the filter
+				$query .= implode(' AND ', $conditions) . ' LIMIT 1;';
+				
+				if(isset($this->eventCallbacks->beforeDelete))
+				{
+					$cbFunc = $this->eventCallbacks->beforeDelete;
+					$cbRes = $cbFunc($pk);
+					if($cbRes !== true)
+					{
+						$this->outputMessage[] = $cbRes;
+						continue;
+					}
+				}
+				
+				$res = $db->query($query, [], 'deleting row via DataTable ' . $this->title);
+				if($res === false)
+				{
+					$this->outputMessage[] = 'Failed to delete row ' . htmlspecialchars(implode(',',$pk));
+				}else{
+					if($res == 0)
+					{
+						$this->outputMessage[] = 'Could not find row ' . htmlspecialchars(implode(',',$pk));
+					}else{
+						$this->outputMessage[] = 'Successfully ' . (($this->allow_delete === true) ? 'deleted' : 'disabled') . ' row ' . htmlspecialchars(implode(',',$pk));
+						$didSomething = true;
+						if(isset($this->eventCallbacks->onDelete))
+						{
+							$cbFunc = $this->eventCallbacks->onDelete;
+							$msg_onDelete = $cbFunc($pk);
+							if(!empty($msg_onDelete)) $this->outputMessage[] = $msg_onDelete;
+						}
+					}
+				}
 			}
 			
-			$query .= implode(',', $setVals) . ' WHERE ';
-			$conditions = array();
-			foreach($pk as $col => $value)
+			//query for saving edits
+			foreach($changesToSave as $pk => $vals) //for each row
 			{
-				if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+				Log::trace('Checking changes for row ' . $pk);
+				$pk = json_decode($pk, true);
+				$query = 'UPDATE `' . $this->table . '` ' . $this->joinString . 'SET ';
+				$setVals = array();
+
+				if(isset($this->eventCallbacks->beforeEdit))
 				{
-					$value = (int)$value;
-				}else{
-					$value = '"' . $db->esc($value) . '"';
-				}
-				$conditions[] = $this->fields[$col]->fqName(true) . '=' . $value;
-			}
-			$conditions[] = $this->filter; //this line only allows editing rows which match the filter
-			$query .= implode(' AND ', $conditions);
-			if(empty($this->joinTables)) $query .= ' LIMIT 1;'; //Safety limit can only be used in single table mode per mysql syntax
-			$res = $db->query($query, [], 'updating row for DataTable ' . $this->title);
-			if($res === false)
-			{
-				$this->outputMessage[] = 'Failed to update row ' . htmlspecialchars(implode(',',$pk));
-			}else{
-				if($res == 0)
-				{
-					$this->outputMessage[] = 'Could not find editable row for ' . htmlspecialchars(implode(',',$pk)) . ' or nothing was edited.';
-				}else{
-					$this->outputMessage[] = 'Successfully updated row ' . htmlspecialchars(implode(',',$pk));
-					$didSomething = true;
-					if(isset($this->eventCallbacks->onEdit))
+					$cbFunc = $this->eventCallbacks->beforeEdit;
+					$cbRes = $cbFunc($vals);
+					if($cbRes !== true)
 					{
-						$cbFunc = $this->eventCallbacks->onEdit;
-						$msg_onEdit = $cbFunc($pk);
-						if(!empty($msg_onEdit)) $this->outputMessage[] = $msg_onEdit;
+						$this->outputMessage[] = $cbRes;
+						continue;
+					}
+				}
+				
+				foreach($vals as $col => $value) //for each field in the row
+				{
+					Log::trace('Checking field ' . $col);
+					$alias = $this->fields[$col]->alias;
+					$constraintsPass = true;
+					foreach($this->fields[$col]->constraints as $cname => $cval) //for each html5 constraint applying to the column
+					{
+						Log::trace('Checking constraint ' . $cname);
+						$conres = $this->checkConstraint($cname, $cval, $value, $alias);
+						if($conres !== true)
+						{
+							$constraintsPass = false;
+							$this->outputMessage[] = $conres;
+							break;
+						}
+					}
+					if(!$constraintsPass) continue;
+					Log::trace('Constraints passed.');
+					if($value == "")
+					{
+						$value = 'NULL';
+					}else{
+						if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+						{
+							$value = (int)$value;
+						}else{
+							$value = '"' . $db->esc($value) . '"';
+						}
+					}
+					$setVals[] = $this->fields[$col]->fqName(true) . '=' . $value;
+				}
+				
+				$query .= implode(',', $setVals) . ' WHERE ';
+				$conditions = array();
+				foreach($pk as $col => $value)
+				{
+					if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+					{
+						$value = (int)$value;
+					}else{
+						$value = '"' . $db->esc($value) . '"';
+					}
+					$conditions[] = $this->fields[$col]->fqName(true) . '=' . $value;
+				}
+				$conditions[] = $this->filter; //this line only allows editing rows which match the filter
+				$query .= implode(' AND ', $conditions);
+				if(empty($this->joinTables)) $query .= ' LIMIT 1;'; //Safety limit can only be used in single table mode per mysql syntax
+				$res = $db->query($query, [], 'updating row for DataTable ' . $this->title);
+				if($res === false)
+				{
+					$this->outputMessage[] = 'Failed to update row ' . htmlspecialchars(implode(',',$pk));
+				}else{
+					if($res == 0)
+					{
+						$this->outputMessage[] = 'Could not find editable row for ' . htmlspecialchars(implode(',',$pk)) . ' or nothing was edited.';
+					}else{
+						$this->outputMessage[] = 'Successfully updated row ' . htmlspecialchars(implode(',',$pk));
+						$didSomething = true;
+						if(isset($this->eventCallbacks->onEdit))
+						{
+							$cbFunc = $this->eventCallbacks->onEdit;
+							$msg_onEdit = $cbFunc($pk);
+							if(!empty($msg_onEdit)) $this->outputMessage[] = $msg_onEdit;
+						}
+					}
+				}
+			}
+			
+			//handle saving new row
+			if(!empty($newRow))
+			{
+				//include defaults for fields not specified
+				foreach($this->fields as $col => $fval)
+				{
+					$directive = $fval->add;
+					if(!array_key_exists($col, $newRow))// || empty($newRow[$col]))
+					{
+						if($directive !== true && $directive !== false)
+						{
+							$newRow[$col] = $directive;
+						}
+					}
+				}
+				//validate
+				$constraintsPass = true;
+				foreach($newRow as $col => $value)
+				{
+					$alias = $this->fields[$col]->alias;
+					foreach($this->fields[$col]->constraints as $cname => $cval)
+					{
+						$conres = $this->checkConstraint($cname, $cval, $value, $alias);
+						if($conres !== true)
+						{
+							$constraintsPass = false;
+							$this->outputMessage[] = $conres;
+							break;
+						}
+					}
+				}
+				if(isset($this->eventCallbacks->beforeAdd))
+				{
+					$cbFunc = $this->eventCallbacks->beforeAdd;
+					$cbRes = $cbFunc($newRow);
+					if($cbRes !== true)
+					{
+						$constraintsPass = false;
+						$this->outputMessage[] = $cbRes;
+					}
+				}
+				
+				//build query
+				if($constraintsPass)
+				{
+					$query = 'INSERT INTO ' . $this->table . ' SET ';
+					$setters = array();
+					$pk = array();
+					foreach($newRow as $col => $value)
+					{
+						$colname = $this->fields[$col]->name;
+						if(in_array($colname,$this->pk)) $pk[$col] = $value;
+						$setter = '`' . $colname . '`=';
+						if($value == "")
+						{
+							$setter .= 'NULL';
+						}else{
+							if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+							{
+								$setter .= (int)$value;
+							}else{
+								$setter .= '"' . $db->esc($value) . '"';
+							}
+						}
+						$setters[] = $setter;
+					}
+					$query .= implode(',', $setters);
+					$res = $db->query($query, [], 'adding new row');
+					if($res === false)
+					{
+						$err = $db->connection->error;
+						$this->outputMessage[] = 'Error adding new row: ' . $err;
+					}else{
+						$insert_id = $db->connection->insert_id;
+						$message = 'New row added successfully';
+						if($insert_id != 0)
+						{
+							$message .= ' with number ' . $insert_id;
+							$pk[$this->autoCol] = $insert_id;
+						}
+						$didSomething = true;
+						$addedToOutputMessage = false;
+						if(isset($this->eventCallbacks->onAdd))
+						{
+							$cbFunc = $this->eventCallbacks->onAdd;
+							$msg_onAdd = $cbFunc($pk);
+							if(!empty($msg_onAdd))
+							{
+								$this->outputMessage[] = $msg_onAdd;
+								$addedToOutputMessage = true;
+							}
+						}
+						if(!$addedToOutputMessage) $this->outputMessage[] = $message;
 					}
 				}
 			}
 		}
 		
-		//handle saving new row
-		if(!empty($newRow))
+		//take care of queryBuilder
+		if($this->show_querybuilder)
 		{
-			//include defaults for fields not specified
-			foreach($this->fields as $col => $fval)
+			if(isset($post['ki_querybuilder_' . $this->title . '_filterResult']))
 			{
-				$directive = $fval->add;
-				if(!array_key_exists($col, $newRow))// || empty($newRow[$col]))
-				{
-					if($directive !== true && $directive !== false)
-					{
-						$newRow[$col] = $directive;
-					}
-				}
+				$this->queryBuilder->handleParams(NULL, $post);
 			}
-			//validate
-			$constraintsPass = true;
-			foreach($newRow as $col => $value)
+			elseif(isset($get['ki_querybuilder_' . $this->title . '_filterResult']))
 			{
-				$alias = $this->fields[$col]->alias;
-				foreach($this->fields[$col]->constraints as $cname => $cval)
-				{
-					$conres = $this->checkConstraint($cname, $cval, $value, $alias);
-					if($conres !== true)
-					{
-						$constraintsPass = false;
-						$this->outputMessage[] = $conres;
-						break;
-					}
-				}
+				$this->queryBuilder->handleParams(NULL, $get);
+			}else{
+				$this->queryBuilder->handleParams();
 			}
-			if(isset($this->eventCallbacks->beforeAdd))
+			if($this->queryBuilder->previousResult !== NULL && !empty($this->queryBuilder->previousResult->fieldsToShow))
 			{
-				$cbFunc = $this->eventCallbacks->beforeAdd;
-				$cbRes = $cbFunc($newRow);
-				if($cbRes !== true)
+				$newFields = [];
+				$index = 0;
+				foreach($this->queryBuilder->previousResult->fieldsToShow as $alias)
 				{
-					$constraintsPass = false;
-					$this->outputMessage[] = $cbRes;
+					$fq = $this->alias2fq[$alias];
+					$newFields[$fq] = $this->fields[$fq];
+					++$index;
 				}
-			}
-			
-			//build query
-			if($constraintsPass)
-			{
-				$query = 'INSERT INTO ' . $this->table . ' SET ';
-				$setters = array();
-				$pk = array();
-				foreach($newRow as $col => $value)
-				{
-					$colname = $this->fields[$col]->name;
-					if(in_array($colname,$this->pk)) $pk[$col] = $value;
-					$setter = '`' . $colname . '`=';
-					if($value == "")
-					{
-						$setter .= 'NULL';
-					}else{
-						if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
-						{
-							$setter .= (int)$value;
-						}else{
-							$setter .= '"' . $db->esc($value) . '"';
-						}
-					}
-					$setters[] = $setter;
-				}
-				$query .= implode(',', $setters);
-				$res = $db->query($query, [], 'adding new row');
-				if($res === false)
-				{
-					$err = $db->connection->error;
-					$this->outputMessage[] = 'Error adding new row: ' . $err;
-				}else{
-					$insert_id = $db->connection->insert_id;
-					$message = 'New row added successfully';
-					if($insert_id != 0)
-					{
-						$message .= ' with number ' . $insert_id;
-						$pk[$this->autoCol] = $insert_id;
-					}
-					$didSomething = true;
-					$addedToOutputMessage = false;
-					if(isset($this->eventCallbacks->onAdd))
-					{
-						$cbFunc = $this->eventCallbacks->onAdd;
-						$msg_onAdd = $cbFunc($pk);
-						if(!empty($msg_onAdd))
-						{
-							$this->outputMessage[] = $msg_onAdd;
-							$addedToOutputMessage = true;
-						}
-					}
-					if(!$addedToOutputMessage) $this->outputMessage[] = $message;
-				}
+				$this->fields = $newFields;
 			}
 		}
+		
 		return $didSomething;
 	}
 	
@@ -1138,12 +1208,14 @@ HTML;
 		$pageList = Util::pagesToShow($this->page,$pages);
 		$pageParam = $this->inPrefix . 'page';
 		
+		$queryString = $this->show_querybuilder ? ('&amp;ki_querybuilder_' . $this->title . '_filterResult=' . htmlspecialchars($this->queryBuilder->previousResultJSON)) : '';
+		
 		//first row: arrows and direct page input
 		$out .= '<span style="float:left;">';
 		if($this->page > 1)
 		{
-			$out .= '<a href="?' . $pageParam . '=1">⇤</a> &nbsp; ';
-			$out .= '<a href="?' . $pageParam . '=' . ($this->page - 1) . '">⬅</a> &nbsp; ';
+			$out .= '<a href="?' . $pageParam . '=1' . $queryString . '">⇤</a> &nbsp; ';
+			$out .= '<a href="?' . $pageParam . '=' . ($this->page - 1) . $queryString . '">⬅</a> &nbsp; ';
 		}else{
 			$out .= '⇤ &nbsp; ';
 			$out .= '⬅ &nbsp; ';
@@ -1154,13 +1226,14 @@ HTML;
 				. 'type="number" min="0" max="' . $pages . '" value="' . $this->page . '" '
 				. 'size="5" style="width:4em;"/>'
 			. '<input type="submit" name="go" value="Page"/>'
+			. ($this->show_querybuilder ? ('<input type="hidden" name="ki_querybuilder_' . $this->title . '_filterResult" value="' . htmlspecialchars($this->queryBuilder->previousResultJSON) . '"/>') : '')
 			. '</form> &nbsp; ';
 		
 		$out .= '<span style="float:right;">';
 		if($this->page < $pages)
 		{
-			$out .= '<a href="?' . $pageParam . '=' . ($this->page + 1) . '">➡</a> &nbsp; ';
-			$out .= '<a href="?' . $pageParam . '=' . $pages . '">⇥</a>';
+			$out .= '<a href="?' . $pageParam . '=' . ($this->page + 1) . $queryString . '">➡</a> &nbsp; ';
+			$out .= '<a href="?' . $pageParam . '=' . $pages . $queryString . '">⇥</a>';
 		}else{
 			$out .= '➡ &nbsp; ';
 			$out .= '⇥';
@@ -1176,7 +1249,9 @@ HTML;
 			{
 				$out .= $pnum;
 			}else{
-				$out .= '<a href="?' . $pageParam . '=' . $pnum . '">' . $pnum . '</a>';
+				$out .= '<a href="?' . $pageParam . '=' . $pnum
+					. $queryString
+					. '">' . $pnum . '</a>';
 			}
 			if($pnum != $pages) $out .= '&nbsp;&nbsp;&nbsp;';
 			$last = $pnum;

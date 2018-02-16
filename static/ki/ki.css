@@ -93,7 +93,7 @@ body{
 }
 
 .ki_button_add{
-	color:#0C0;
+	color:#0A0;
 	font-weight:bold;
 }
 
@@ -336,7 +336,91 @@ body{
 }
 
 /* Cross browser standardization */
-input[type=text],input[type=password],input[type=email]{
+input[type=text],input[type=password],input[type=email],input[type=number]{
 	width:137px;
 	padding:2px;
+}
+
+input[type=text],input[type=password],input[type=email],input[type=number],select{
+	-webkit-box-sizing: border-box;
+	-moz-box-sizing: border-box;
+	box-sizing: border-box;
+}
+
+/* QueryBuilder */
+.ki_querybuilder{
+	text-align:left;
+}
+.ki_querybuilder fieldset{
+	float:left;
+}
+.ki_querybuilder fieldset+fieldset+fieldset{
+	padding-right:30px;
+}
+.ki_querybuilder ol,.ki_querybuilder ul{
+	list-style-type: none;
+	padding:0 0 0 5px;
+}
+.ki_querybuilder ol{
+	margin:0;
+	max-height:10em;
+	overflow-y:scroll;
+}
+.ki_querybuilder ul{
+	margin:0 0 0 1em;
+	position:relative;
+}
+.ki_querybuilder ul li::before{
+	content:"—";
+}
+.ki_querybuilder ul li{
+	clear:both;
+	padding-top:1px;
+	white-space:nowrap;
+	position:relative;
+}
+.ki_querybuilder ul>li>div{
+	position:absolute;
+	top:0;
+	left:0;
+	bottom:0;
+	border-left:1px black solid;
+}
+.ki_querybuilder ul>li:last-child>div{
+	height:11px;
+}
+.ki_querybuilder ul li input,.ki_querybuilder ul li select{
+	height:19px;
+	margin:0;
+	padding:0;
+}
+.ki_querybuilder ul li input[type=checkbox]{
+	height:auto;
+	margin:0 1em 0 1em;
+	padding:0;
+}
+.ki_querybuilder ol li{
+	background-color:#EEE;
+	border:1px solid white;
+}
+.ki_querybuilder ol li select{
+	margin:1px;
+}
+.ki_querybuilder button{
+	width:auto;
+	font-weight:normal;
+	height:19px;
+	border:0;
+	padding:0 2px 0 2px;
+	color:#0A0;
+	position:relative;
+	top:1px;
+	clear:none;
+}
+.ki_querybuilder button:last-child,.ki_querybuilder button+button~button{
+	color:#F00;
+	width:20px;
+	margin-left:2px;
+	position:absolute;
+	right:-25px;
 }

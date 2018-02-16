@@ -224,7 +224,7 @@ class User
 		$callbacks = new DataTableEventCallbacks(NULL, NULL, NULL, $beforeEdit, $beforeEdit, NULL);
 		$filter = 'username != "root"';
 		
-		return new DataTable('userAdmin','ki_users', $userFields, true, true, $filter, 50, true, false, false, false, $callbacks);
+		return new DataTable('userAdmin','ki_users', $userFields, true, true, $filter, 50, true, true, false, false, $callbacks);
 	}
 }
 ?>
