@@ -16,6 +16,7 @@ class MarkupGenerator
 		$mt_webshim_js   = filemtime($comp . '/webshim/polyfiller.js');
 		$mt_ki_css       = filemtime($comp . '/ki/ki.css');
 		$mt_ki_js        = filemtime($comp . '/ki/ki.js');
+		$mt_ki_qb_js     = filemtime($comp . '/ki/ki_querybuilder.js');
 		
 		$title = $config['general']['sitename'] . ' - ' . htmlspecialchars(pathinfo($_SERVER['PHP_SELF'])['filename']);
 		$base = $config['general']['staticUrl'];
@@ -33,6 +34,7 @@ class MarkupGenerator
   <script>webshims.polyfill('forms forms-ext details geolocation');</script>
   <link rel="stylesheet" href="$base/ki/ki.css?ver=$mt_ki_css"/>
   <script src="$base/ki/ki.js?ver=$mt_ki_js"></script>
+  <script src="$base/ki/ki_querybuilder.js?ver=$mt_ki_qb_js"></script>
   <title>$title</title>
   <meta itemprop="environment" content="$env"/>
 

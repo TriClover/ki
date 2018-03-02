@@ -50,5 +50,8 @@ class DataTableField
 	public $keyType      = NULL; //PRI, UNI, MUL
 	public $defaultValue = NULL;
 	public $extra        = NULL;
+	
+	//metadata
+	public $serialNum = NULL; //index with which this field was originally provided to the DataTable, for compact referencing
 }
 ?>

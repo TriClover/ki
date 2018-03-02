@@ -124,6 +124,7 @@ class DataTable extends Form
 		
 		//get schema info
 		$db = Database::db();
+		$fieldSerial = 1;
 		foreach($table as $tab)
 		{
 			$query = 'SHOW COLUMNS FROM `' . $tab . '`';
@@ -193,6 +194,9 @@ class DataTable extends Form
 				}else{
 					$this->alias2fq[$this->fields[$fieldFQ]->alias] = $fieldFQ;
 				}
+				
+				//give the field its serial number
+				$this->fields[$fieldFQ]->serialNum = ++$fieldSerial;
 			}
 		}
 		
@@ -1208,7 +1212,7 @@ HTML;
 		$pageList = Util::pagesToShow($this->page,$pages);
 		$pageParam = $this->inPrefix . 'page';
 		
-		$queryString = $this->show_querybuilder ? ('&amp;ki_querybuilder_' . $this->title . '_filterResult=' . htmlspecialchars($this->queryBuilder->previousResultJSON)) : '';
+		$queryString = $this->show_querybuilder ? ('&amp;ki_querybuilder_' . $this->title . '_filterResult=' . urlencode($this->queryBuilder->previousResultJSON)) : '';
 		
 		//first row: arrows and direct page input
 		$out .= '<span style="float:left;">';

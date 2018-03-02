@@ -135,5 +135,54 @@ class Util
 			$str .= mb_substr($keyspace, random_int(0, $max), 1);
 		return $str;
 	}
+	
+	/**
+	* Rightward bit-shift in an unsigned way, like the >>> operator in javascript
+	* @param subject the number to shift
+	* @param places the number of bits that the subject will be shifted
+	* @return the result of shifting
+	*/
+	function unsignedRightShift($subject, $places)
+	{
+		$a = $subject;
+		$b = $places;
+		if($b >= 32 || $b < -32)
+		{
+			$m = (int)($b/32);
+			$b = $b-($m*32);
+		}
+
+		if($b < 0) $b = 32 + $b;
+		if($b == 0) return (($a>>1)&0x7fffffff)*2+(($a>>$b)&1);
+
+		if($a < 0) 
+		{ 
+			$a = ($a >> 1); 
+			$a &= 2147483647; 
+			$a |= 0x40000000; 
+			$a = ($a >> ($b - 1)); 
+		}else{ 
+			$a = ($a >> $b); 
+		} 
+		return $a; 
+	}
+	
+	/**
+	* Return a reference into a multidimensional array based on a dynamic list of indices.
+	* If the referenced location doesn't exist,
+	* it is recursively initialized with the end valuie being NULL.
+	* @param a The root of the array
+	* @param indexList A series of indicies leading into $a
+	* @return reference to the indicated location
+	*/
+	function &arrayDynamicRef(array &$a, array $indexList)
+	{
+		$out =& $a;
+		foreach($indexList as $i)
+		{
+			$out =& $out[$i];
+		}
+		return $out;
+	}
 }
 ?>

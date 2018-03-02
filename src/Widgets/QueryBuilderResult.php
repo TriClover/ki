@@ -32,4 +32,30 @@ class QueryBuilderResult
 	}
 }
 
+/*
+Binary format
+
+number of shown fields, 12 bits
+IDs of shown fields, 12 bits each
+000000000000, if number of fields was even
+
+number of sorted fields, 12 bits
+0000
+specified number of sorted fields:
+	colID, 12 bits
+	direction, 1 bit, 0=asc,1=desc
+	000
+
+root condition group spec:
+	0 (group):
+		boolOpId, 2 bits
+		number of conditions on this level, 5 bits
+		recurse
+	1 (condition):
+		value starting byte, 15 bits
+		value length in bytes, 8 bits
+		colID, 12 bits
+		opID, 4 bits
+flat storage of condition values follows
+*/
 ?>
