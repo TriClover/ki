@@ -350,8 +350,6 @@ class DataTable extends Form
 			$outMsgStr .= '<ul>';
 			foreach($this->outputMessage as $retmsg) $outMsgStr .= '<li>' . $retmsg . '</li>';
 			$outMsgStr .= '</ul>';
-		}else{
-			$outMsgStr .= '&nbsp;';
 		}
 		$outMsgStr .= '</div>';
 		$out .= $outMsgStr;

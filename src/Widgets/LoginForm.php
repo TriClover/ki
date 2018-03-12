@@ -193,8 +193,8 @@ class LoginForm extends Form
 		
 		$fields = array();
 		$fields[] = new DataTableField('id',            'ki_users', 'Register', false, false, false);
-		$fields[] = new DataTableField('username',      'ki_users', NULL, true, false, true);
-		$fields[] = new DataTableField('email',         'ki_users', NULL, true, false, true, array('type' => 'email'));
+		$fields[] = new DataTableField('username',      'ki_users', 'Username', true, false, true);
+		$fields[] = new DataTableField('email',         'ki_users', 'Email', true, false, true, array('type' => 'email'));
 		$fields[] = new DataTableField('email_verified','ki_users', NULL, false, false, 0);
 		$fields[] = new DataTableField('password_hash', 'ki_users', 'password', true, false, true, $passwordConstraints, $formatPassField);
 		$fields[] = new DataTableField('enabled',       'ki_users', NULL, false, false, 1);
