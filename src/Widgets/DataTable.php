@@ -357,18 +357,6 @@ class DataTable extends Form
 							&& !empty($this->fields[$col]->fkReferencedField)
 							&& ($this->fields[$col]->dropdownLimit >= $this->fields[$col]->numOptions)))
 					{
-						$options = [];
-						if(Util::startsWith($this->fields[$col]->dataType, 'enum'))
-						{
-							$ops = mb_substr($this->fields[$col]->dataType, 6, mb_strlen($this->fields[$col]->dataType)-8);
-							$options = explode("','", $ops);
-						}else{
-							$opsQuery = 'SELECT DISTINCT ' . $this->fields[$col]->fkReferencedField
-								. ' FROM ' . $this->fields[$col]->fkReferencedTable;
-							$opsRows = $db->query($opsQuery, [], 'getting values for FK dropdown');
-							foreach($opsRows as $opsRow)
-								$options[] = $opsRow[$this->fields[$col]->fkReferencedField];
-						}
 						$inputAttributes[] = 'value="' . $value . '" ';
 						$json_data[$inputName] = $value;
 						
@@ -382,7 +370,7 @@ class DataTable extends Form
 								. (empty($value) ? ' selected' : '')
 								. '></option>';
 						}
-						foreach($options as $op)
+						foreach($this->fields[$col]->dropdownOptions as $op)
 						{
 							$dataCell .= "\n      " . '<option'
 								. ($value == $op ? ' selected' : '')

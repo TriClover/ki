@@ -2,6 +2,7 @@
 namespace mls\ki\Widgets;
 use \mls\ki\Database;
 use \mls\ki\Log;
+use \mls\ki\Util;
 
 class DataTableField
 {
@@ -33,6 +34,8 @@ class DataTableField
 	//Metadata
 	public $serialNum = NULL; //index with which this field was originally provided to the DataTable, for compact referencing
 	public $numOptions = NULL;
+	public $dropdownLimit = NULL;
+	public $dropdownOptions = [];
 
 	/**
 	* Constructing a DataTableField fills it with the data used for identifying the field
@@ -107,6 +110,12 @@ class DataTableField
 		$this->keyType      = $row['Key'];
 		$this->defaultValue = $row['Default'];
 		$this->extra        = $row['Extra'];
+		
+		if(Util::startsWith($this->dataType, 'enum'))
+		{
+			$ops = mb_substr($this->dataType, 6, mb_strlen($this->dataType)-8);
+			$this->dropdownOptions = explode("','", $ops);
+		}
 	}
 	
 	static function fillSchemaInfoAll(\mls\ki\Widgets\DataTable &$dt)
@@ -215,6 +224,14 @@ SQL;
 					. ') AS n FROM ' . $db->esc($dt->fields[$fieldFQ]->fkReferencedTable);
 				$countRes = $db->query($countQuery, [], 'Getting number of options for FK field');
 				$dt->fields[$fieldFQ]->numOptions = $countRes[0]['n'];
+				if($dt->fields[$fieldFQ]->numOptions <= $dt->fields[$fieldFQ]->dropdownLimit)
+				{
+					$opsQuery = 'SELECT DISTINCT ' . $db->esc($dt->fields[$fieldFQ]->fkReferencedField)
+						. ' FROM ' . $db->esc($dt->fields[$fieldFQ]->fkReferencedTable);
+					$opsRows = $db->query($opsQuery, [], 'getting values for FK dropdown');
+					foreach($opsRows as $opsRow)
+						$dt->fields[$fieldFQ]->dropdownOptions[] = $opsRow[$dt->fields[$fieldFQ]->fkReferencedField];
+				}
 			}
 		}
 		return true;
