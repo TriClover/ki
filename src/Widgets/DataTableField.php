@@ -1,21 +1,53 @@
 <?php
 namespace mls\ki\Widgets;
+use \mls\ki\Database;
+use \mls\ki\Log;
 
 class DataTableField
 {
 	//Identification
-	public $name;            //Always required. If NULL, use these settings for fields not specified.
+	public $name;
 	public $table;
-	public $alias = NULL;    //NULL = same as $name unless $table is specified in which case it will be $table.$name
+	public $alias = NULL;
+	
 	//Where to use the field
 	public $show = true;
-	public $edit = false;    //Ignored if $show = false
-	public $add  = true;     //What to do for this field when adding new rows. true=allow editing, false=disallow and use default/auto value, and string/number/NULL=disallow and use this value instead. Ignored if adding new rows is not allowed or $show = false.
+	public $edit = false;
+	public $add  = true;
+
 	//Validation
-	public $constraints = array(); //HTML5 form validation constraints. These will be used directly in the form and interpreted for server-side checks.
+	public $constraints = array();
+
 	//Presentation
-	public $outputFilter = NULL; //Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
-	
+	public $outputFilter = NULL;
+
+	//Schema
+	public $dataType     = NULL;
+	public $nullable     = NULL;
+	public $keyType      = NULL; //PRI, UNI, MUL
+	public $defaultValue = NULL;
+	public $extra        = NULL;
+	public $fkReferencedTable = NULL;
+	public $fkReferencedField = NULL;
+
+	//Metadata
+	public $serialNum = NULL; //index with which this field was originally provided to the DataTable, for compact referencing
+	public $numOptions = NULL;
+
+	/**
+	* Constructing a DataTableField fills it with the data used for identifying the field
+	* and the options for this field that come from the DataTable.
+	* It does not fill the schema related information.
+	* @param name The column name in the schema. If NULL, use these settings for fields not specified.
+	* @param table The table name in the schema
+	* @param alias Used for display, and as the alias in any queries. NULL = $table.$name
+	* @param show Whether a DataTable will show this column
+	* @param edit Whether a DataTable will allow editing this column
+	* @param add What to do for this field when adding new rows. true=allow editing, false=disallow and use default/auto value, and string/number/NULL=disallow and use this value instead.
+	* @param constraints HTML5 form validation constraints. These will be used directly in the form and interpreted for server-side checks.
+	* @param outputFilter Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
+	* @param dropdownLimit If this field is eligible to become a FK based dropdown, calculate the number of options it would have, and if it is more than dropdownLimit then revert to making it a text field instead to avoid excessive page load time
+	*/
 	function __construct(         $name,
 	                     string   $table,
 						          $alias = NULL,
@@ -23,7 +55,8 @@ class DataTableField
 						 bool     $edit = false,
 						          $add = NULL,
 						 array    $constraints = array(),
-						 callable $outputFilter = NULL)
+						 callable $outputFilter = NULL,
+						 int      $dropdownLimit = 200)
 	{
 		$this->name = $name;
 		$this->table = $table;
@@ -36,6 +69,7 @@ class DataTableField
 		$this->add = $add;
 		$this->constraints = ($constraints === NULL) ? array() : $constraints;
 		$this->outputFilter = $outputFilter;
+		$this->dropdownLimit = $dropdownLimit;
 	}
 	
 	function fqName(bool $quoted = false)
@@ -44,14 +78,146 @@ class DataTableField
 		return $q . $this->table . $q . '.' . $q . $this->name . $q;
 	}
 	
-	//schema
-	public $dataType     = NULL;
-	public $nullable     = NULL;
-	public $keyType      = NULL; //PRI, UNI, MUL
-	public $defaultValue = NULL;
-	public $extra        = NULL;
+	/**
+	* Apply found schema info for this field, and apply usage restrictions based on the schema.
+	* @param dt the DataTable using this field
+	* @param row the row from SHOW COLUMNS applying to this field
+	*/
+	function fillSchemaInfo(\mls\ki\Widgets\DataTable &$dt, array $row)
+	{
+		//Don't allow editing on fields critical to a join. It can work, but with a result that would be very confusing to the user.
+		foreach($dt->joinTables as $join)
+		{
+			if(($this->table == $join->mainTable && $row['Field'] == $join->mainTableFKField)
+				|| ($this->table == $join->joinTable && $row['Field'] == $join->joinTableReferencedUniqueField))
+			{
+				$this->edit = false;
+			}
+		}
+		
+		//Don't accept the default of allowing user value for add on auto_increment column
+		if(mb_strpos($row['Extra'],'auto_increment') !== false)
+		{
+			$this->add = false;
+		}
+
+		//store schema info in the field config
+		$this->dataType     = $row['Type'];
+		$this->nullable     = $row['Null'];
+		$this->keyType      = $row['Key'];
+		$this->defaultValue = $row['Default'];
+		$this->extra        = $row['Extra'];
+	}
 	
-	//metadata
-	public $serialNum = NULL; //index with which this field was originally provided to the DataTable, for compact referencing
+	static function fillSchemaInfoAll(\mls\ki\Widgets\DataTable &$dt)
+	{
+		$db = Database::db();
+		$table = [$dt->table];
+		foreach($dt->joinTables as $t) $table[] = $t;
+		
+		$fk = [];
+		$fieldSerial = 1;
+		foreach($table as $tab)
+		{
+			$query = 'SHOW COLUMNS FROM `' . $tab . '`';
+			$res = $db->query($query, [], 'getting schema info for dataTable ' . $dt->title);
+			if($res === false)
+			{
+				return false;
+			}
+			foreach($res as $row)
+			{
+				$fieldFQ = $tab . '.' . $row['Field'];
+				//if this field isn't in the config list, add it with default settings
+				if(!isset($dt->fields[$fieldFQ]))
+				{
+					Log::trace('DataTable ' . $dt->title . ' applying default values for unconfigured field: ' . $fieldFQ);
+					$dt->fields[$fieldFQ] = clone $dt->defaultField;
+					$dt->fields[$fieldFQ]->name = $row['Field'];
+					$dt->fields[$fieldFQ]->alias = $fieldFQ;
+					$dt->fields[$fieldFQ]->table = $tab;
+					//Exception: Never try to enable editing on PK fields
+					if($row['Key'] == 'PRI') $dt->fields[$fieldFQ]->edit = false;
+				}
+				
+				$dt->fields[$fieldFQ]->fillSchemaInfo($dt, $row);
+				
+				//keep track of which fields have certain properties so we're not searching later
+				if($tab == $dt->table)
+				{
+					if($row['Key'] == 'PRI')
+						$dt->pk[] = $row['Field'];
+					elseif($row['Key'] == 'MUL')
+						$fk[] = $row['Field'];
+					if(mb_strpos($row['Extra'],'auto_increment') !== false)
+						$dt->autoCol = $row['Field'];
+				}else{
+					if($row['Key'] == 'PRI')
+						$dt->joinTables[$tab]->pk[] = $row['Field'];
+					if(mb_strpos($row['Extra'],'auto_increment') !== false)
+						$dt->joinTables[$tab]->autoCol = $row['Field'];
+				}
+				//bail on duplicate alias
+				if(isset($dt->alias2fq[$dt->fields[$fieldFQ]->alias]))
+				{
+					Log::error('DataTable ' . $dt->title . ' specified a duplicate alias.');
+					return false;
+				}else{
+					$dt->alias2fq[$dt->fields[$fieldFQ]->alias] = $fieldFQ;
+				}
+				
+				//give the field its serial number
+				$dt->fields[$fieldFQ]->serialNum = ++$fieldSerial;
+			}
+		}
+		$colParam = '';
+		foreach($fk as $index => $f)
+		{
+			if($index > 0) $colParam .= ',';
+			$colParam .= '"' . $db->esc($f) . '"';
+		}
+		
+		if(!empty($colParam))
+		{
+			$query = <<<SQL
+SELECT `keys`.`COLUMN_NAME` AS 'field',
+	`keys`.`REFERENCED_TABLE_NAME` AS 'refTable',
+	`keys`.`REFERENCED_COLUMN_NAME` AS 'refColumn'
+FROM
+	(
+		SELECT * FROM `INFORMATION_SCHEMA`.`KEY_COLUMN_USAGE`
+        WHERE `INFORMATION_SCHEMA`.`KEY_COLUMN_USAGE`.`CONSTRAINT_SCHEMA` = ?         /*param dbname*/
+			AND `INFORMATION_SCHEMA`.`KEY_COLUMN_USAGE`.`TABLE_SCHEMA` = ?            /*param dbname*/
+            AND `INFORMATION_SCHEMA`.`KEY_COLUMN_USAGE`.`TABLE_NAME` = ?              /*param table */
+            AND `INFORMATION_SCHEMA`.`KEY_COLUMN_USAGE`.`COLUMN_NAME` IN($colParam)   /*fake param because stupid API can't bind arrays */
+			AND `INFORMATION_SCHEMA`.`KEY_COLUMN_USAGE`.`REFERENCED_TABLE_SCHEMA` = ? /*param dbname*/
+	) AS `keys`
+	INNER JOIN
+    (
+		SELECT * FROM `information_schema`.`TABLE_CONSTRAINTS`
+		WHERE `information_schema`.`TABLE_CONSTRAINTS`.`CONSTRAINT_TYPE` = 'FOREIGN KEY' 
+			AND `information_schema`.`TABLE_CONSTRAINTS`.`TABLE_SCHEMA` = ?      /*param dbname*/
+            AND `information_schema`.`TABLE_CONSTRAINTS`.`CONSTRAINT_SCHEMA` = ? /*param dbname*/
+			AND `information_schema`.`TABLE_CONSTRAINTS`.`TABLE_NAME` = ?        /*param table*/
+	) AS `constraints`
+    ON `keys`.`CONSTRAINT_NAME` = `constraints`.`CONSTRAINT_NAME`
+SQL;
+			$dbname = $db->dbName;
+			$params = [$dbname, $dbname, $dt->table, $dbname, $dbname, $dbname, $dt->table];
+			$fkRes = $db->query($query, $params, 'getting foreign keys for DataTable');
+			foreach($fkRes as $row)
+			{
+				$fieldFQ = $dt->table . '.' . $row['field'];
+				$dt->fields[$fieldFQ]->fkReferencedTable = $row['refTable'];
+				$dt->fields[$fieldFQ]->fkReferencedField = $row['refColumn'];
+				
+				$countQuery = 'SELECT COUNT(DISTINCT ' . $db->esc($dt->fields[$fieldFQ]->fkReferencedField)
+					. ') AS n FROM ' . $db->esc($dt->fields[$fieldFQ]->fkReferencedTable);
+				$countRes = $db->query($countQuery, [], 'Getting number of options for FK field');
+				$dt->fields[$fieldFQ]->numOptions = $countRes[0]['n'];
+			}
+		}
+		return true;
+	}
 }
 ?>

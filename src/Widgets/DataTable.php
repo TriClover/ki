@@ -12,9 +12,9 @@ use \mls\ki\Util;
 class DataTable extends Form
 {
 	//setup parameters
-	protected $title;            //title for this widget - needed to separate multiple DataTables on the same page
-	protected $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first matching foreign key found (FK in base table connected to PK in other table).
-	protected $fields;           //array of DataTableField objects specifying what to do with each field. Fields not specified will get the defaults shown in the DataTableField class. A field with NULL for the name overrides what is used for fields not specified.
+	public    $title;            //title for this widget - needed to separate multiple DataTables on the same page
+	public    $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first matching foreign key found (FK in base table connected to PK in other table).
+	public    $fields;           //array of DataTableField objects specifying what to do with each field. Fields not specified will get the defaults shown in the DataTableField class. A field with NULL for the name overrides what is used for fields not specified.
 	protected $allow_add;        //true: allow adding rows. false: dont.
 	protected $allow_delete;     //true: allow deleting rows. false: don't. string: allow but set this field=false (table.field) instead of actually deleting
 	protected $filter;           //if string, use as sql fragment in where clause to filter output: useful if table has "enabled" field.
@@ -31,14 +31,15 @@ class DataTable extends Form
 	protected $customCallbacks = array();
 	protected $allow_edit;
 	protected $allow_show;
-	protected $joinTables = array();
+	public    $joinTables = array();
 	protected $joinString;
-	protected $alias2fq = array(); //keys = aliases of all fields, values = unquoted FQ field names
+	public    $alias2fq = array(); //keys = aliases of all fields, values = unquoted FQ field names
 	protected $queryBuilder = NULL;
+	public    $defaultField = NULL; //DataTableField with default values to clone as the basis for fields not specified
 	
 	//schema
-	protected $pk = array();   //fields that are in the primary key
-	protected $autoCol = NULL; //field with auto_increment, NULL if none
+	public    $pk = array();   //fields that are in the primary key
+	public    $autoCol = NULL; //field with auto_increment, NULL if none
 	
 	//state from params
 	protected $page = 1;
@@ -101,7 +102,7 @@ class DataTable extends Form
 		}
 		
 		//process field definitions
-		$defaultField = new DataTableField(NULL, $this->table);
+		$this->defaultField = new DataTableField(NULL, $this->table);
 		if($fields === NULL) $fields = array();
 		if(!is_array($fields))
 		{
@@ -115,7 +116,7 @@ class DataTable extends Form
 			if($inputField->name === NULL)
 			{
 				//field config for "NULL" will be used for any fields where a config was not provided
-				$defaultField = $inputField;
+				$this->defaultField = $inputField;
 			}else{
 				//store the given field config in the DataTable indexed by field name
 				$this->fields[$inputField->fqName()] = $inputField;
@@ -124,80 +125,11 @@ class DataTable extends Form
 		
 		//get schema info
 		$db = Database::db();
-		$fieldSerial = 1;
-		foreach($table as $tab)
+		$schemaResult = DataTableField::fillSchemaInfoAll($this);
+		if($schemaResult === false)
 		{
-			$query = 'SHOW COLUMNS FROM `' . $tab . '`';
-			$res = $db->query($query, [], 'getting schema info for dataTable ' . $this->title);
-			if($res === false)
-			{
-				$this->setupOK = false;
-				return;
-			}
-			foreach($res as $row)
-			{
-				$fieldFQ = $tab . '.' . $row['Field'];
-				//if this field isn't in the config list, add it with default settings
-				if(!isset($this->fields[$fieldFQ]))
-				{
-					Log::trace('DataTable ' . $this->title . ' applying default values for unconfigured field: ' . $fieldFQ);
-					$this->fields[$fieldFQ] = clone $defaultField;
-					$this->fields[$fieldFQ]->name = $row['Field'];
-					$this->fields[$fieldFQ]->alias = $fieldFQ;
-					$this->fields[$fieldFQ]->table = $tab;
-					//Exception: Never try to enable editing on PK fields
-					if($row['Key'] == 'PRI') $this->fields[$fieldFQ]->edit = false;
-				}
-				
-				//Don't allow editing on fields critical to a join. It can work, but with a result that would be very confusing to the user.
-				foreach($this->joinTables as $join)
-				{
-					if(($tab == $join->mainTable && $row['Field'] == $join->mainTableFKField)
-						|| ($tab == $join->joinTable && $row['Field'] == $join->joinTableReferencedUniqueField))
-					{
-						$this->fields[$fieldFQ]->edit = false;
-					}
-				}
-				
-				//Don't accept the default of allowing user value for add on auto_increment column
-				if(mb_strpos($row['Extra'],'auto_increment') !== false)
-				{
-					$this->fields[$fieldFQ]->add = false;
-				}
-
-				//store schema info in the field config
-				$this->fields[$fieldFQ]->dataType     = $row['Type'];
-				$this->fields[$fieldFQ]->nullable     = $row['Null'];
-				$this->fields[$fieldFQ]->keyType      = $row['Key'];
-				$this->fields[$fieldFQ]->defaultValue = $row['Default'];
-				$this->fields[$fieldFQ]->extra        = $row['Extra'];
-				
-				//keep track of which fields have certain properties so we're not searching later
-				if($tab == $this->table)
-				{
-					if($row['Key'] == 'PRI')
-						$this->pk[] = $row['Field'];
-					if(mb_strpos($row['Extra'],'auto_increment') !== false)
-						$this->autoCol = $row['Field'];
-				}else{
-					if($row['Key'] == 'PRI')
-						$this->joinTables[$tab]->pk[] = $row['Field'];
-					if(mb_strpos($row['Extra'],'auto_increment') !== false)
-						$this->joinTables[$tab]->autoCol = $row['Field'];
-				}
-				//bail on duplicate alias
-				if(isset($this->alias2fq[$this->fields[$fieldFQ]->alias]))
-				{
-					Log::error('DataTable ' . $this->title . ' specified a duplicate alias.');
-					$this->setupOK = false;
-					return;
-				}else{
-					$this->alias2fq[$this->fields[$fieldFQ]->alias] = $fieldFQ;
-				}
-				
-				//give the field its serial number
-				$this->fields[$fieldFQ]->serialNum = ++$fieldSerial;
-			}
+			$this->setupOK = false;
+			return;
 		}
 		
 		//joins, for multi-table
@@ -350,6 +282,8 @@ class DataTable extends Form
 			$outMsgStr .= '<ul>';
 			foreach($this->outputMessage as $retmsg) $outMsgStr .= '<li>' . $retmsg . '</li>';
 			$outMsgStr .= '</ul>';
+		}else{
+			if($this->show_exports) $outMsgStr .= '&nbsp;';
 		}
 		$outMsgStr .= '</div>';
 		$out .= $outMsgStr;
@@ -412,16 +346,60 @@ class DataTable extends Form
 						$inputAttributes[] = 'value="1"';
 						if($value) $inputAttributes[] = 'checked="checked"';
 						$json_data[$inputName] = $value ? 1 : 0;
+						
+						$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
+						$inputAttributes[] = $this->stringifyConstraints($col);
+						$inputAttributes[] = 'class="ki_table_input"';
+						$dataCell .= "\n     " . '<input ' . implode(' ', $inputAttributes) . '/>';
+					}
+					elseif(Util::startsWith($this->fields[$col]->dataType, 'enum')
+						|| (!empty($this->fields[$col]->fkReferencedTable)
+							&& !empty($this->fields[$col]->fkReferencedField)
+							&& ($this->fields[$col]->dropdownLimit >= $this->fields[$col]->numOptions)))
+					{
+						$options = [];
+						if(Util::startsWith($this->fields[$col]->dataType, 'enum'))
+						{
+							$ops = mb_substr($this->fields[$col]->dataType, 6, mb_strlen($this->fields[$col]->dataType)-8);
+							$options = explode("','", $ops);
+						}else{
+							$opsQuery = 'SELECT DISTINCT ' . $this->fields[$col]->fkReferencedField
+								. ' FROM ' . $this->fields[$col]->fkReferencedTable;
+							$opsRows = $db->query($opsQuery, [], 'getting values for FK dropdown');
+							foreach($opsRows as $opsRow)
+								$options[] = $opsRow[$this->fields[$col]->fkReferencedField];
+						}
+						$inputAttributes[] = 'value="' . $value . '" ';
+						$json_data[$inputName] = $value;
+						
+						$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
+						$inputAttributes[] = $this->stringifyConstraints($col);
+						$inputAttributes[] = 'class="ki_table_input"';
+						$dataCell .= "\n     " . '<select ' . implode(' ', $inputAttributes) . '>';
+						if($this->fields[$col]->nullable == 'YES')
+						{
+							$dataCell .= '"\n      "' . '<option'
+								. (empty($value) ? ' selected' : '')
+								. '></option>';
+						}
+						foreach($options as $op)
+						{
+							$dataCell .= "\n      " . '<option'
+								. ($value == $op ? ' selected' : '')
+								. '>' . $op . '</option>';
+						}
+						$dataCell .= "\n     " . '</select>';
 					}else{
 						if($this->fields[$col]->constraints['type'] == 'datetime-local')
 							$value = str_replace(' ', 'T', $value);
 						$inputAttributes[] = 'value="' . $value . '" ';
 						$json_data[$inputName] = $value;
+						
+						$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
+						$inputAttributes[] = $this->stringifyConstraints($col);
+						$inputAttributes[] = 'class="ki_table_input"';
+						$dataCell .= "\n     " . '<input ' . implode(' ', $inputAttributes) . '/>';
 					}
-					$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
-					$inputAttributes[] = $this->stringifyConstraints($col);
-					$inputAttributes[] = 'class="ki_table_input"';
-					$dataCell .= "\n     " . '<input ' . implode(' ', $inputAttributes) . '/>';
 				}else{
 					$cellType = "show";
 					$dataCell .= "\n     " . $value;
@@ -541,7 +519,7 @@ class DataTable extends Form
 			if(!self::$anyPrinted) $js .= <<<'HTML'
 			$(".ki_button_save").css("position","absolute");
 			$(".ki_noscript_spacer").remove();
-			$("input").on("change keydown keyup blur", function(){
+			$(".ki_table input,.ki_table select").on("change keydown keyup blur", function(){
 				ki_setEditVisibility($(this).parent().parent().find('.ki_button_save'), inputValues);
 			});
 HTML;

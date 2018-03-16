@@ -93,7 +93,7 @@ CREATE TABLE `ki_sessions` (
   `fingerprint` text COLLATE utf8mb4_unicode_ci NOT NULL,
   `established` datetime NOT NULL,
   `last_active` datetime DEFAULT NULL,
-  `remember` tinyint(4) NOT NULL,
+  `remember` tinyint(1) NOT NULL,
   `last_id_reissue` datetime NOT NULL,
   PRIMARY KEY (`id_hash`),
   KEY `fk_sessions_user_users_id_idx` (`user`),
