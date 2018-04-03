@@ -17,6 +17,8 @@ class MarkupGenerator
 		$mt_ki_css       = filemtime($comp . '/ki/ki.css');
 		$mt_ki_js        = filemtime($comp . '/ki/ki.js');
 		$mt_ki_qb_js     = filemtime($comp . '/ki/ki_querybuilder.js');
+		$mt_chosen_css   = filemtime($comp . '/chosen/chosen.min.css');
+		$mt_chosen_js    = filemtime($comp . '/chosen/chosen.jquery.min.js');
 		
 		$title = $config['general']['sitename'] . ' - ' . htmlspecialchars(pathinfo($_SERVER['PHP_SELF'])['filename']);
 		$base = $config['general']['staticUrl'];
@@ -35,6 +37,8 @@ class MarkupGenerator
   <link rel="stylesheet" href="$base/ki/ki.css?ver=$mt_ki_css"/>
   <script src="$base/ki/ki.js?ver=$mt_ki_js"></script>
   <script src="$base/ki/ki_querybuilder.js?ver=$mt_ki_qb_js"></script>
+  <link rel="stylesheet" href="$base/chosen/chosen.min.css?ver=$mt_chosen_css"/>
+  <script src="$base/chosen/chosen.jquery.min.js?ver=$mt_chosen_js"></script>
   <title>$title</title>
   <meta itemprop="environment" content="$env"/>
 

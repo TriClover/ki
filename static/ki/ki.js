@@ -58,8 +58,17 @@ function ki_setEditVisibility(btn, inputValues)
 		if(control.attr('type') == "checkbox")
 		{
 			changed = (control.prop('checked') == true) != (inputValues[control.attr('id')] == true);
+		}
+		else if(control.prop('tagName') == "SELECT" && typeof(control.attr("multiple")) != 'undefined')
+		{
+			changed = !((control.val().length === inputValues[control.attr('id')].length) && control.val().every(
+				function(element, index)
+				{
+					return element === inputValues[control.attr('id')][index]; 
+				}
+			));
 		}else{
-			changed = control.prop('value') != inputValues[control.attr('id')];
+			changed = control.val() != inputValues[control.attr('id')];
 		}
 		if(changed)
 		{

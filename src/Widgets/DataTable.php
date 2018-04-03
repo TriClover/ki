@@ -56,19 +56,19 @@ class DataTable extends Form
 	* Set up the DataTable, doing all necessary validation on the configuration and
 	* translating it to a form easier for the internal code to use
 	*/
-	function __construct($title,
-	                     $table,
-	                     $fields            = array(),
-	                     $allow_add         = false,
-	                     $allow_delete      = false,
-	                     $filter            = false,
-	                     $rows_per_page     = 50,
-	                     $show_exports      = false,
-	                     $show_querybuilder = false,
-	                     $show_querylist    = false, //todo
-	                     $show_querysave    = false, //todo
-						 $eventCallbacks    = NULL,
-						 $buttonCallbacks   = NULL)
+	function __construct(string $title,
+	                     string $table,
+	                     array  $fields            = array(),
+	                     bool   $allow_add         = false,
+	                     bool   $allow_delete      = false,
+	                     string $filter            = '',
+	                     int    $rows_per_page     = 50,
+	                     bool   $show_exports      = false,
+	                     bool   $show_querybuilder = false,
+	                     bool   $show_querylist    = false, //todo
+	                     bool   $show_querysave    = false, //todo
+	    DataTableEventCallbacks $eventCallbacks    = NULL,
+						 array  $buttonCallbacks   = NULL)
 	{
 		//save parameters
 		$this->title             = $title;
@@ -146,10 +146,10 @@ class DataTable extends Form
 		$this->allow_show = false;
 		foreach($this->fields as $fname => $field)
 		{
-			if($field->dataType === NULL)
+			if($field->dataType === NULL || ($field->dataType == 'virtual' && $field->manyToMany === false))
 			{
 				unset($this->fields[$fname]);
-				Log::warn('DataTable ' . $this->title . ' asked to show a field that is not in any included table: ' . $fname);
+				Log::warn('DataTable ' . $this->title . ' asked to show a field that is not in any included table and is not a valid virtual field: ' . $fname);
 				Log::debug(Util::toString($this->fields));
 			}else{
 				$this->fields[$fname]->constraints = $this->findConstraints($fname);
@@ -200,7 +200,7 @@ class DataTable extends Form
 			foreach($this->fields as $fname => $fval)
 			{
 				//remove unshown fields from "add" list
-				if(!$fval->show) $this->fields[$fname]->add = false;
+				if(!$fval->show && $fval->add === true) $this->fields[$fname]->add = false;
 				
 				//check for fields whose settings will break adding new rows
 				if($fval->nullable == 'NO'
@@ -377,6 +377,22 @@ class DataTable extends Form
 								. '>' . $op . '</option>';
 						}
 						$dataCell .= "\n     " . '</select>';
+					}elseif($this->fields[$col]->manyToMany !== false){
+						$inputAttributes[] = 'name="' . $inputName . '[]" id="' . $inputName . '"';
+						$inputAttributes[] = $this->stringifyConstraints($col);
+						$inputAttributes[] = 'class="ki_table_input"';
+						
+						
+						$valSets = explode(chr(30), $value);
+						$valKeys = empty($valSets[0]) ? [] : explode(chr(31), $valSets[0]);
+						$valDisp = empty($valSets[1]) ? [] : explode(chr(31), $valSets[1]);
+						$json_data[$inputName] = $valKeys;
+						
+						$dataCell .= "\n     " . '<input type="hidden" name="' . $inputName . '" id="H' . $inputName . '" value=""/>';
+						$dataCell .= "\n     ";
+						$dataCell .= '<select multiple ' . implode(' ', $inputAttributes) . '>';
+						$dataCell .= $this->fields[$col]->manyToMany->optionsHTML($valKeys);
+						$dataCell .= '</select>';
 					}else{
 						if($this->fields[$col]->constraints['type'] == 'datetime-local')
 							$value = str_replace(' ', 'T', $value);
@@ -390,7 +406,18 @@ class DataTable extends Form
 					}
 				}else{
 					$cellType = "show";
-					$dataCell .= "\n     " . $value;
+					if($this->fields[$col]->manyToMany === false)
+					{
+						$dataCell .= "\n     " . $value;
+					}else{
+						$valSets = explode(chr(30), $value);
+						$valKeys = empty($valSets[0]) ? [] : explode(chr(31), $valSets[0]);
+						$valDisp = empty($valSets[1]) ? [] : explode(chr(31), $valSets[1]);
+						$dataCell .= "\n     ";
+						$dataCell .= '<select disabled multiple>';
+						$dataCell .= $this->fields[$col]->manyToMany->optionsHTML($valKeys);
+						$dataCell .= '</select>';
+					}
 				}
 				if($this->fields[$col]->outputFilter !== NULL)
 				{
@@ -465,20 +492,53 @@ class DataTable extends Form
 				}
 				elseif($directive === true)
 				{
-					$inputName = $this->inPrefix . 'new_' . htmlspecialchars($this->fields[$col]->name);
+					$inputName = $this->inPrefix . 'new_' . base64_encode($this->fields[$col]->fqName(false));
 					$inputAttributes = array();
-					$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
+					
 					$inputAttributes[] = $this->stringifyConstraints($col);
 					if($val->constraints['type'] == 'checkbox')
 					{
+						$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
 						$addingCell .= '<input type="hidden" name="' . $inputName . '" id="H' . $inputName . '" value="0"/>';
 						$inputAttributes[] = 'value="1"';
 						if($val->defaultValue) $inputAttributes[] = 'checked="checked"';
+						$addingCell .= '<input ' . implode(' ', $inputAttributes) . '/>';
+					}
+					elseif(Util::startsWith($val->dataType, 'enum')
+						|| (!empty($val->fkReferencedTable)
+							&& !empty($val->fkReferencedField)
+							&& ($val->dropdownLimit >= $val->numOptions)))
+					{
+						$inputAttributes[] = 'name="' . $inputName . '[]" id="' . $inputName . '"';
+						$addingCell .= '<select ' . implode(' ', $inputAttributes) . '>';
+						if($val->nullable == 'YES')
+						{
+							$addingCell .= '<option'
+								. (empty($val->defaultValue) ? ' selected' : '')
+								. '></option>';
+						}
+						foreach($val->dropdownOptions as $op)
+						{
+							$addingCell .= '<option'
+								. ($val->defaultValue == $op ? ' selected' : '')
+								. '>' . $op . '</option>';
+						}
+						$addingCell .= "\n     " . '</select>';
+					}
+					elseif($val->manyToMany !== false)
+					{
+						$inputAttributes[] = 'name="' . $inputName . '[]" id="' . $inputName . '"';
+						$defaults = is_array($val->defaultValue) ? $val->defaultValue : [$val->defaultValue];
+						$addingCell .= '<input type="hidden" name="' . $inputName . '" id="H' . $inputName . '" value=""/>';
+						$addingCell .= '<select multiple ' . implode(' ', $inputAttributes) . '>';
+						$addingCell .= $val->manyToMany->optionsHTML($defaults);
+						$addingCell .= '</select>';
 					}else{
+						$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
 						$inputAttributes[] = 'value="' . $val->defaultValue . '"';
 						$inputAttributes[] = 'placeholder="' . $val->alias . '"';
+						$addingCell .= '<input ' . implode(' ', $inputAttributes) . '/>';
 					}
-					$addingCell .= '<input ' . implode(' ', $inputAttributes) . '/>';
 				}else{
 					$addingCell .= $directive;
 				}
@@ -510,6 +570,11 @@ class DataTable extends Form
 			$(".ki_table input,.ki_table select").on("change keydown keyup blur", function(){
 				ki_setEditVisibility($(this).parent().parent().find('.ki_button_save'), inputValues);
 			});
+			$(".ki_table select[multiple]").chosen({
+				disable_search_threshold: 6,
+				placeholder_text_multiple: "None",
+				search_contains: true
+			});
 HTML;
 			$js = str_replace('inputValues',$arrIV,$js);
 			$js .= '</script>';
@@ -525,7 +590,35 @@ HTML;
 		$fields = array(); //query snippets listing each real field and its alias if any
 		foreach($this->fields as $field)
 		{
-			$fields[] = $field->fqName(true) . ' AS "' . $field->alias . '"';
+			if($field->dataType == 'virtual')
+			{
+				if($field->manyToMany !== false)
+				{
+					$mainTable                  ='`'.$field->manyToMany->mainTable                  .'`';
+					$mainTablePKField           =    $field->manyToMany->mainTablePKFieldFQ();
+					$relatedTable               ='`'.$field->manyToMany->relatedTable               .'`';
+					$relatedTablePKField        =    $field->manyToMany->relatedTablePKFieldFQ();
+					$relatedTableDisplayField   =    $field->manyToMany->relatedTableDisplayFieldFQ();
+					$relationTable              ='`'.$field->manyToMany->relationTable              .'`';
+					$relationTableRelatedFKField=    $field->manyToMany->relationTableRelatedFKFieldFQ();
+					$relationTableMainFKField   =    $field->manyToMany->relationTableMainFKFieldFQ();
+					$alias                      ='"'.$field->manyToMany->alias                      .'"';
+					
+					$fields[] =<<<END_SQL
+(
+	SELECT CONCAT(
+		GROUP_CONCAT($relatedTablePKField ORDER BY $relatedTableDisplayField SEPARATOR 0x1F),
+        CHAR(30),
+        GROUP_CONCAT($relatedTableDisplayField ORDER BY $relatedTableDisplayField SEPARATOR 0x1F)
+	)
+    FROM $relationTable LEFT JOIN $relatedTable ON $relationTableRelatedFKField=$relatedTablePKField
+    WHERE $relationTableMainFKField=$mainTablePKField
+) AS $alias 
+END_SQL;
+				}
+			}else{
+				$fields[] = $field->fqName(true) . ' AS "' . $field->alias . '"';
+			}
 		}
 		
 		$sortClause = '';
@@ -701,6 +794,7 @@ HTML;
 			$deletePrefix = $this->inPrefix . 'delete_';
 			$deleteKeys = array();
 			$callbackPrefix = $this->inPrefix . 'callback_';
+			
 			foreach($post as $key => $value)
 			{
 				if(mb_strpos($key,$deletePrefix) === 0) //check for delete button
@@ -827,7 +921,7 @@ HTML;
 				}
 				elseif(mb_strpos($key,$newPrefix) === 0) //check for new row input
 				{
-					$col = $this->table . '.' . mb_substr($key,mb_strlen($newPrefix));
+					$col = base64_decode(mb_substr($key,mb_strlen($newPrefix)));
 					if($this->fields[$col]->add !== true)
 					{
 						Log::warn('(DataTable) Tried to specify value for new row in field not editable in new rows');
@@ -911,7 +1005,7 @@ HTML;
 						continue;
 					}
 				}
-				
+
 				foreach($vals as $col => $value) //for each field in the row
 				{
 					Log::trace('Checking field ' . $col);
@@ -930,20 +1024,33 @@ HTML;
 					}
 					if(!$constraintsPass) continue;
 					Log::trace('Constraints passed.');
-					if($value == "")
+					
+					$updatedVirtualField = false;
+					if($this->fields[$col]->dataType != 'virtual')
 					{
-						$value = 'NULL';
-					}else{
-						if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+						if($value == "")
 						{
-							$value = (int)$value;
+							$value = 'NULL';
 						}else{
-							$value = '"' . $db->esc($value) . '"';
+							if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+							{
+								$value = (int)$value;
+							}else{
+								$value = '"' . $db->esc($value) . '"';
+							}
+						}
+						$setVals[] = $this->fields[$col]->fqName(true) . '=' . $value;
+					}elseif($this->fields[$col]->manyToMany !== false){
+						$updatedVirtualField = true;
+						
+						$res = $this->fields[$col]->manyToMany->updateData($pk, $value);
+						if($res !== true)
+						{
+							$this->outputMessage[] = $res;
 						}
 					}
-					$setVals[] = $this->fields[$col]->fqName(true) . '=' . $value;
 				}
-				
+
 				$query .= implode(',', $setVals) . ' WHERE ';
 				$conditions = array();
 				foreach($pk as $col => $value)
@@ -964,7 +1071,7 @@ HTML;
 				{
 					$this->outputMessage[] = 'Failed to update row ' . htmlspecialchars(implode(',',$pk));
 				}else{
-					if($res == 0)
+					if($res == 0 && !$updatedVirtualField)
 					{
 						$this->outputMessage[] = 'Could not find editable row for ' . htmlspecialchars(implode(',',$pk)) . ' or nothing was edited.';
 					}else{
@@ -1028,23 +1135,30 @@ HTML;
 					$query = 'INSERT INTO ' . $this->table . ' SET ';
 					$setters = array();
 					$pk = array();
+					$virtuals = [];
 					foreach($newRow as $col => $value)
 					{
 						$colname = $this->fields[$col]->name;
 						if(in_array($colname,$this->pk)) $pk[$col] = $value;
-						$setter = '`' . $colname . '`=';
-						if($value == "")
+						
+						if($this->fields[$col]->dataType == 'virtual')
 						{
-							$setter .= 'NULL';
+							$virtuals[$col] = $value;
 						}else{
-							if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+							$setter = '`' . $colname . '`=';
+							if($value == "")
 							{
-								$setter .= (int)$value;
+								$setter .= 'NULL';
 							}else{
-								$setter .= '"' . $db->esc($value) . '"';
+								if(mb_strpos($this->fields[$col]->dataType,'int') !== false)
+								{
+									$setter .= (int)$value;
+								}else{
+									$setter .= '"' . $db->esc($value) . '"';
+								}
 							}
+							$setters[] = $setter;
 						}
-						$setters[] = $setter;
 					}
 					$query .= implode(',', $setters);
 					$res = $db->query($query, [], 'adding new row');
@@ -1060,6 +1174,16 @@ HTML;
 							$message .= ' with number ' . $insert_id;
 							$pk[$this->autoCol] = $insert_id;
 						}
+						
+						foreach($virtuals as $col => $value)
+						{
+							$res = $this->fields[$col]->manyToMany->updateData($pk, $value);
+							if($res !== true)
+							{
+								$this->outputMessage[] = $res;
+							}
+						}
+						
 						$didSomething = true;
 						$addedToOutputMessage = false;
 						if(isset($this->eventCallbacks->onAdd))

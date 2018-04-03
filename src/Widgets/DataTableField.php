@@ -10,6 +10,7 @@ class DataTableField
 	public $name;
 	public $table;
 	public $alias = NULL;
+	public $manyToMany = false;
 	
 	//Where to use the field
 	public $show = true;
@@ -36,20 +37,36 @@ class DataTableField
 	public $numOptions = NULL;
 	public $dropdownLimit = NULL;
 	public $dropdownOptions = [];
+	
+	//State
+	public $filled = false;
 
 	/**
 	* Constructing a DataTableField fills it with the data used for identifying the field
 	* and the options for this field that come from the DataTable.
 	* It does not fill the schema related information.
-	* @param name The column name in the schema. If NULL, use these settings for fields not specified.
-	* @param table The table name in the schema
-	* @param alias Used for display, and as the alias in any queries. NULL = $table.$name
-	* @param show Whether a DataTable will show this column
-	* @param edit Whether a DataTable will allow editing this column
-	* @param add What to do for this field when adding new rows. true=allow editing, false=disallow and use default/auto value, and string/number/NULL=disallow and use this value instead.
-	* @param constraints HTML5 form validation constraints. These will be used directly in the form and interpreted for server-side checks.
-	* @param outputFilter Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
+	* @param name          The column name in the schema (as string).
+	*                       If NULL, use these settings for fields not specified.
+	* @param table         The table name in the schema where this field resides.
+	*                       Must be a table specified in the DataTable unless the manyToMany parameter is true (see below)
+	* @param alias         Used for display, and as the alias in any queries. NULL = $table.$name
+	* @param show          Whether a DataTable will show this column
+	* @param edit          Whether a DataTable will allow editing this column
+	* @param add           What to do for this field when adding new rows.
+	*                       true=allow editing
+	*                       false=disallow and use default/auto value
+	*                       string/number/NULL=disallow and use this value instead
+	* @param constraints   HTML5 form validation constraints. These will be used directly in the form and interpreted for server-side checks.
+	* @param outputFilter  Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
 	* @param dropdownLimit If this field is eligible to become a FK based dropdown, calculate the number of options it would have, and if it is more than dropdownLimit then revert to making it a text field instead to avoid excessive page load time
+	* @param manyToMany    If true, this field will be a virtual field representing a
+	*                       many-to-many relation between the DataTable's main table and some
+	*                       other table, in the form of a multi-select control.
+	*                       Both the DataTable's main table and the related table must have single field primary keys.
+	*                       There must also be a relational table having foreign keys to the PKs of the two aforementioned tables. It will be found automatically.
+	*                       Other parameters will be interpereted as follows:
+	*                       table = the related table with which to make and break associations
+	*                       name = the field in the related table to show as values in the select.
 	*/
 	function __construct(         $name,
 	                     string   $table,
@@ -59,7 +76,8 @@ class DataTableField
 						          $add = NULL,
 						 array    $constraints = array(),
 						 callable $outputFilter = NULL,
-						 int      $dropdownLimit = 200)
+						 int      $dropdownLimit = 200,
+						 bool     $manyToMany = false)
 	{
 		$this->name = $name;
 		$this->table = $table;
@@ -73,6 +91,11 @@ class DataTableField
 		$this->constraints = ($constraints === NULL) ? array() : $constraints;
 		$this->outputFilter = $outputFilter;
 		$this->dropdownLimit = $dropdownLimit;
+		
+		if($manyToMany)
+		{
+			$this->manyToMany = new DataTableMultiRelation($table, $alias, $name);
+		}
 	}
 	
 	function fqName(bool $quoted = false)
@@ -116,6 +139,13 @@ class DataTableField
 			$ops = mb_substr($this->dataType, 6, mb_strlen($this->dataType)-8);
 			$this->dropdownOptions = explode("','", $ops);
 		}
+		
+		if($this->manyToMany)
+		{
+			$this->manyToMany->fillKeys($dt);
+		}
+		
+		$this->filled = true;
 	}
 	
 	static function fillSchemaInfoAll(\mls\ki\Widgets\DataTable &$dt)
@@ -124,6 +154,8 @@ class DataTableField
 		$table = [$dt->table];
 		foreach($dt->joinTables as $t) $table[] = $t;
 		
+		//get schema info for all the tables involved and fill it into the field objects
+		//creating field objects with default setup for fields not specified
 		$fk = [];
 		$fieldSerial = 1;
 		foreach($table as $tab)
@@ -179,13 +211,14 @@ class DataTableField
 				$dt->fields[$fieldFQ]->serialNum = ++$fieldSerial;
 			}
 		}
+		
+		//For all the fields that are potentially foreign keys, check if they are
 		$colParam = '';
 		foreach($fk as $index => $f)
 		{
 			if($index > 0) $colParam .= ',';
 			$colParam .= '"' . $db->esc($f) . '"';
 		}
-		
 		if(!empty($colParam))
 		{
 			$query = <<<SQL
@@ -214,6 +247,7 @@ SQL;
 			$dbname = $db->dbName;
 			$params = [$dbname, $dbname, $dt->table, $dbname, $dbname, $dbname, $dt->table];
 			$fkRes = $db->query($query, $params, 'getting foreign keys for DataTable');
+			//for foreign key fields, fill the relevant info
 			foreach($fkRes as $row)
 			{
 				$fieldFQ = $dt->table . '.' . $row['field'];
@@ -224,6 +258,7 @@ SQL;
 					. ') AS n FROM ' . $db->esc($dt->fields[$fieldFQ]->fkReferencedTable);
 				$countRes = $db->query($countQuery, [], 'Getting number of options for FK field');
 				$dt->fields[$fieldFQ]->numOptions = $countRes[0]['n'];
+				//gather data for making the FK field a dropdown if eligible
 				if($dt->fields[$fieldFQ]->numOptions <= $dt->fields[$fieldFQ]->dropdownLimit)
 				{
 					$opsQuery = 'SELECT DISTINCT ' . $db->esc($dt->fields[$fieldFQ]->fkReferencedField)
@@ -234,6 +269,24 @@ SQL;
 				}
 			}
 		}
+
+		//Fields that didn't get schema info filled above must be virtual
+		foreach($dt->fields as $fieldFQ => $field)
+		{
+			if(!$field->filled)
+			{
+				$dt->fields[$fieldFQ]->serialNum = ++$fieldSerial;
+				//take action only for each valid kind of virtual field
+				//don't process fields that are missing just because they weren't in the table
+				if($field->manyToMany !== false)
+				{
+					$row = ['Field' => $field->name, 'Type' => 'virtual', 'Null' => 'YES', 'Key' => '', 'Default' => NULL, 'Extra' => ''];
+					$dt->fields[$fieldFQ]->fillSchemaInfo($dt, $row);
+					$dt->alias2fq[$dt->fields[$fieldFQ]->alias] = $fieldFQ;
+				}
+			}
+		}
+		
 		return true;
 	}
 }

@@ -198,6 +198,7 @@ class User
 		$userFields[] = new DataTableField('enabled',       'ki_users', 'Enabled?',       true, true,  true );
 		$userFields[] = new DataTableField('last_active',   'ki_users', 'Last Active',    true, false, false);
 		$userFields[] = new DataTableField('lockout_until', 'ki_users', 'Lockout Until:', true, true,  false);
+		$userFields[] = new DataTableField('name',          'ki_groups','Groups:',        true, true,  true, [], NULL, 200, true);
 		
 		$beforeEdit = function(&$row)
 		{

@@ -38,31 +38,31 @@ class QueryBuilderCondition
 			case '<=':
 			case '>':
 			case '>=':
-			$out = $this->field->fqName(true) . $this->operator . '"' . $db->connection->real_escape_string($this->value) . '"';
+			$out = $this->field->fqName(true) . $this->operator . '"' . $db->esc($this->value) . '"';
 			break;
 			
 			case 'contains':
-			$out = $this->field->fqName(true) . ' LIKE "%' . $db->connection->real_escape_string($this->value) . '%"';
+			$out = $this->field->fqName(true) . ' LIKE "%' . $db->esc($this->value) . '%"';
 			break;
 			
 			case 'does not contain':
-			$out = $this->field->fqName(true) . ' NOT LIKE "%' . $db->connection->real_escape_string($this->value) . '%"';
+			$out = $this->field->fqName(true) . ' NOT LIKE "%' . $db->esc($this->value) . '%"';
 			break;
 			
 			case 'contained in':
-			$out = '"' . $db->connection->real_escape_string($this->value) . '" LIKE ("%" + ' . $this->field->fqName(true) . ' + "%")';
+			$out = '"' . $db->esc($this->value) . '" LIKE ("%" + ' . $this->field->fqName(true) . ' + "%")';
 			break;
 			
 			case 'not contained in':
-			$out = '"' . $db->connection->real_escape_string($this->value) . '" NOT LIKE ("%" + ' . $this->field->fqName(true) . ' + "%")';
+			$out = '"' . $db->esc($this->value) . '" NOT LIKE ("%" + ' . $this->field->fqName(true) . ' + "%")';
 			break;
 			
 			case 'matches regex':
-			$out = $this->field->fqName(true) . ' REGEXP "' . $db->connection->real_escape_string($this->value) . '"';
+			$out = $this->field->fqName(true) . ' REGEXP "' . $db->esc($this->value) . '"';
 			break;
 			
 			case "doesn't match regex":
-			$out = $this->field->fqName(true) . ' NOT REGEXP "' . $db->connection->real_escape_string($this->value) . '"';
+			$out = $this->field->fqName(true) . ' NOT REGEXP "' . $db->esc($this->value) . '"';
 			break;
 			
 			case 'is NULL':
@@ -72,6 +72,29 @@ class QueryBuilderCondition
 			case 'is NOT NULL':
 			$out = $this->field->fqName(true) . ' IS NOT NULL';
 		}
+		
+		if($this->field->manyToMany !== false)
+		{
+			$relation = $this->field->manyToMany;
+			$relatedTable                = '`' . $relation->relatedTable  . '`';
+			$relationTable               = '`' . $relation->relationTable . '`';
+			$mainTablePKField            = $relation->mainTablePKFieldFQ();
+			$relatedTablePKField         = $relation->relatedTablePKFieldFQ();
+			$relatedTableDisplayField    = $relation->relatedTableDisplayFieldFQ();
+			$relationTableRelatedFKField = $relation->relationTableRelatedFKFieldFQ();
+			$relationTableMainFKField    = $relation->relationTableMainFKFieldFQ();
+			$out = <<<QUERY_END
+SELECT COUNT(*)
+FROM $relatedTable
+WHERE $out AND
+	$relatedTablePKField IN(
+		SELECT $relationTableRelatedFKField
+		FROM $relationTable
+		WHERE $relationTableMainFKField = $mainTablePKField)
+QUERY_END;
+			$out = '(' . $out . ') >0';
+		}
+		
 		return $out;
 	}
 }

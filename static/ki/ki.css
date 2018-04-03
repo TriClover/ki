@@ -74,6 +74,10 @@ body{
 	width:3em;
 }
 
+.ki_table select[multiple]{
+	min-width:15em;
+}
+
 .ki_button_save{
 	background-size:contain;
 	font-size:100%;
