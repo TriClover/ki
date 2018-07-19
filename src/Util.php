@@ -93,7 +93,7 @@ class Util
 		return $out;
 	}
 
-	function getUrl()
+	public static function getUrl()
 	{
 		static $url = NULL;
 		if($url === NULL)
@@ -108,17 +108,17 @@ class Util
 		return $url;
 	}
 
-	function startsWith($haystack, $needle)
+	public static function startsWith($haystack, $needle)
 	{
 		return $needle == '' || mb_strpos($haystack, $needle) === 0;
 	}
 
-	function endsWith($haystack, $needle)
+	public static function endsWith($haystack, $needle)
 	{
 		return (string)$needle === mb_substr($haystack, -mb_strlen($needle));
 	}
 	
-	function contains($haystack, $needle)
+	public static function contains($haystack, $needle)
 	{
 		return strpos($haystack, $needle) !== false;
 	}
@@ -127,7 +127,7 @@ class Util
 	* Cryptographically-secure random string with a specified length in characters
 	* If using a given keyspace with multi-byte characters, the length in bytes can vary
 	*/
-	function random_str($length, $keyspace = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+	public static function random_str($length, $keyspace = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
 	{
 		$str = '';
 		$max = mb_strlen($keyspace) - 1;
@@ -142,7 +142,7 @@ class Util
 	* @param places the number of bits that the subject will be shifted
 	* @return the result of shifting
 	*/
-	function unsignedRightShift($subject, $places)
+	public static function unsignedRightShift($subject, $places)
 	{
 		$a = $subject;
 		$b = $places;
@@ -170,12 +170,12 @@ class Util
 	/**
 	* Return a reference into a multidimensional array based on a dynamic list of indices.
 	* If the referenced location doesn't exist,
-	* it is recursively initialized with the end valuie being NULL.
+	* it is recursively initialized with the end value being NULL.
 	* @param a The root of the array
 	* @param indexList A series of indicies leading into $a
 	* @return reference to the indicated location
 	*/
-	function &arrayDynamicRef(array &$a, array $indexList)
+	public static function &arrayDynamicRef(array &$a, array $indexList)
 	{
 		$out =& $a;
 		foreach($indexList as $i)
@@ -183,6 +183,49 @@ class Util
 			$out =& $out[$i];
 		}
 		return $out;
+	}
+	
+	/**
+	* Make a command-line call (like exec, proc_open, etc)
+	* @param cmdLine the command to execute
+	* @param stdin   any content to pipe into STDIN
+	* @return an array with indices (stdout, stderr, exitcode)
+	*         the values for which are the contents of those things returned by the called program
+	*         OR string on failure
+	*/
+	public static function cmd(string $cmdLine, string $stdin = '')
+	{
+		$stdout = '';
+		$ioDescriptors = array(
+			0 => ["pipe", "r"], //for STDIN,  child reads from pipe
+			1 => ["pipe", "w"], //for STDOUT, child writes to pipe
+			2 => ["pipe", "w"]  //for STDERR, child writes to pipe
+		);
+		$pipes = []; //will contain file pointers to the i/o for the command
+		$exitcode = NULL;
+		$procResource = proc_open($cmdLine, $ioDescriptors, $pipes);
+		if($procResource === false) return 'could not open process';
+		$writeResult = fwrite($pipes[0], $stdin);
+		while(true)
+		{
+			$status = proc_get_status($procResource);
+			if(!$status['running'])
+			{
+				$exitcode = $status['exitcode'];
+				break;
+			}
+			usleep(200000);
+		}
+		$stdout = stream_get_contents($pipes[1]);
+		$stderr = stream_get_contents($pipes[2]);
+		fclose($pipes[0]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		proc_close($procResource);
+		
+		if($writeResult === false) return 'could not send data to process';
+		if($stdout === false || $stderr === false) return 'could not read output from process';
+		return ['stdout' => $stdout, 'stderr' => $stderr, 'exitcode' => $exitcode];
 	}
 }
 ?>

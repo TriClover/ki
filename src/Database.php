@@ -217,7 +217,7 @@ END_SCRIPT;
 	/**
 	* Generates an array of SQL statements that would make this DB
 	* have the same schema as another DB. Uses mysqldbcompare.
-	* @param dbSchema Database object for the DB to use as a reference (existing contents will be lost!)
+	* @param dbSchema Database object for the temp comparison DB to use as a reference (existing contents will be lost!)
 	* @param schema the SQL script holding the schema definition
 	* @return array of lines in a SQL script, or string if an error happened.
 	*/
@@ -234,8 +234,16 @@ END_SCRIPT;
 		   If mysqldbcompare ever lets you specify which table-options to check/skip, then change this.
 		*/
 		$cmdCompare = 'mysqldbcompare --server1=' . $this->connectionString() . ' ' . $this->dbName . ':' . $dbSchema->dbName . ' --skip-data-check --skip-row-count --skip-table-options --difftype=sql --run-all-tests --character-set=utf8mb4';
-		$outCompare = array();
-		exec($cmdCompare, $outCompare);
+		$compareResults = Util::cmd($cmdCompare);
+		if(!is_array($compareResults)) return 'Error running mysqldbcompare: ' . $compareResults;
+		$outCompare = explode("\n", $compareResults['stdout']);
+		$errCompare = str_replace("\n", '<br/>', $compareResults['stderr']);
+		if($errCompare != '') return 'Error running mysqldbcompare:<br/><br/>' . $errCompare;
+		/* we only checked stderr for errors because mysqldbcompare's exitcode is not very useful:
+		   it returns the same code (1) for both "error running the command" and
+		   "ran successfully and found differences"
+		*/
+
 		$missingTables = array();
 		$extraTables = array();
 		$previousLine = '';
