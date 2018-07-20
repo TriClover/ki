@@ -172,7 +172,7 @@ class DataTable extends Form
 				if(!$field->edit) continue;
 				Log::trace('DataTable ' . $this->title . ' checking edit-validity of field with alias: ' . $field->alias);
 				
-				if(!$field->show)
+				if($field->show === false)
 				{
 					$this->fields[$fname]->edit = false;
 					Log::warn('DataTable ' . $this->title . 'asked to edit a field that was not shown: ' . $fname);
@@ -200,7 +200,7 @@ class DataTable extends Form
 			foreach($this->fields as $fname => $fval)
 			{
 				//remove unshown fields from "add" list
-				if(!$fval->show && $fval->add === true) $this->fields[$fname]->add = false;
+				if($fval->show !== true && $fval->add === true) $this->fields[$fname]->add = false;
 				
 				//check for fields whose settings will break adding new rows
 				if($fval->nullable == 'NO'
@@ -1201,7 +1201,7 @@ END_SQL;
 				}
 			}
 		}
-		
+
 		//take care of queryBuilder
 		if($this->show_querybuilder)
 		{
@@ -1224,6 +1224,12 @@ END_SQL;
 					$fq = $this->alias2fq[$alias];
 					$newFields[$fq] = $this->fields[$fq];
 					++$index;
+					
+					//For "showable but not by default" fields, show if selected in the querybuilder
+					if($newFields[$fq]->show === NULL)
+					{
+						$newFields[$fq]->show = true;
+					}
 				}
 				$this->fields = $newFields;
 			}

@@ -32,22 +32,24 @@ class QueryBuilder extends Form
 	function __construct(array $fields, string $title)
 	{
 		foreach($fields as $key => $f)
-			if(!$f->show)
+			if($f->show === false)
 				unset($fields[$key]);
 		
-		$this->fields = $fields;
+		$this->fields = Util::arrayClone($fields);
 		$this->title = $title;
 		$this->inPrefix .= $title;
 		
 		//Create a new state object with default values.
 		//If anything was input then handleParamsInternal will override this.
+		$aliasesCheckedByDefault = [];
 		foreach($fields as $fq => $f)
 		{
 			$this->aliases[] = $f->alias;
 			$this->alias2fq[$f->alias] = $fq;
 			$this->serial2alias[$f->serialNum] = $f->alias;
+			if($f->show === true) $aliasesCheckedByDefault[] = $f->alias;
 		}
-		$freshRes = new QueryBuilderResult($this->aliases, new QueryBuilderConditionGroup('AND', []), []);
+		$freshRes = new QueryBuilderResult($aliasesCheckedByDefault, new QueryBuilderConditionGroup('AND', []), []);
 		$this->previousResult = $freshRes;
 	}
 	
@@ -62,8 +64,8 @@ class QueryBuilder extends Form
 		foreach($this->previousResult->fieldsToShow as $alias)
 		{
 			if(!in_array($alias, $this->aliases)) continue;
-			$out .= '<li><label><input type="checkbox" value="' . htmlspecialchars($alias) . '" checked />'
-				. htmlspecialchars($alias) . '</label></li>';
+			$out .= '<li><label><input type="checkbox" value="' . htmlspecialchars($alias)
+				. '" checked />' . htmlspecialchars($alias) . '</label></li>';
 		}
 		foreach($this->aliases as $alias)
 		{

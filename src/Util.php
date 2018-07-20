@@ -227,5 +227,22 @@ class Util
 		if($stdout === false || $stderr === false) return 'could not read output from process';
 		return ['stdout' => $stdout, 'stderr' => $stderr, 'exitcode' => $exitcode];
 	}
+	
+	/**
+	* Make a new deep-copy of an array, making sure all objects are cloned
+	* @param in the array to clone
+	* @return a new array with no references to the original
+	*/
+	public static function arrayClone(array $in)
+	{
+		$newArray = array();
+		foreach($in as $key => $value)
+		{
+			if    (is_array ($value)) $newArray[$key] = Util::arrayClone($value);
+			elseif(is_object($value)) $newArray[$key] = clone $value;
+			else                      $newArray[$key] = $value;
+		}
+		return $newArray;
+	}
 }
 ?>

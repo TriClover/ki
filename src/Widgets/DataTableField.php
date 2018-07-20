@@ -51,6 +51,9 @@ class DataTableField
 	*                       Must be a table specified in the DataTable unless the manyToMany parameter is true (see below)
 	* @param alias         Used for display, and as the alias in any queries. NULL = $table.$name
 	* @param show          Whether a DataTable will show this column
+	*                       true  = show
+	*                       false = don't show
+	*                       NULL  = don't show by default but make available for showing in the query builder
 	* @param edit          Whether a DataTable will allow editing this column
 	* @param add           What to do for this field when adding new rows.
 	*                       true=allow editing
@@ -71,7 +74,7 @@ class DataTableField
 	function __construct(         $name,
 	                     string   $table,
 						          $alias = NULL,
-						 bool     $show = true,
+						          $show = true,
 						 bool     $edit = false,
 						          $add = NULL,
 						 array    $constraints = array(),
