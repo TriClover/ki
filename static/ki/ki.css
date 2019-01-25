@@ -70,6 +70,10 @@ body{
 	position:relative;
 }
 
+.ki_table_action{
+	white-space:nowrap;
+}
+
 .ki_table input[type=number]{
 	width:3em;
 }

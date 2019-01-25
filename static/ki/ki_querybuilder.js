@@ -219,10 +219,16 @@ function ki_queryBuilderCondition(prefix, field, operator, value)
 	out += '</select><select onchange="ki_queryBuilderUpdateInput(this, \'' + prefix + '\');">';
 	out += ki_queryBuilderGenerateOperatorOptions(field, prefix, operator) + '</select>';
 	var dataType = ki_querybuilder_fields[prefix][field]['dataType'];
+	var dropdownOptions = ki_querybuilder_fields[prefix][field]['dropdownOptions'];
 	var inputDisplay = ki_queryBuilderCalculateInputDisplay(dataType, operator);
 	var inputType = ki_queryBuilderCalculateInputType(dataType, operator);
 	var checked = (inputType == 'checkbox' && value) ? ' checked' : '';
-	out += '<input type="' + inputType + '" value="' + value + '" style="display:' + inputDisplay + ';"' + checked + '/>';
+	if(dataType.indexOf('enum') !== -1 || dropdownOptions.length > 0)
+	{
+		out += ki_queryBuilderGenerateDropdownInput(dataType, value, dropdownOptions, inputDisplay);
+	}else{
+		out += '<input type="' + inputType + '" value="' + value + '" style="display:' + inputDisplay + ';"' + checked + '/>';
+	}
 	out += '<div>&nbsp;</div>';
 	out += '<button type="button" title="Delete" onclick="this.parentNode.parentNode.removeChild(this.parentNode);">❌</button>';
 	return out;
@@ -238,6 +244,8 @@ function ki_queryBuilderGenerateOperatorOptions(alias, prefix, selected)
 	if(type == 'tinyint(1)')
 	{
 		ops = ['='];
+	}else if(type.indexOf('enum') !== -1){
+		ops = ['=','!='];
 	}else if((type.indexOf('int') !== -1) || (type.indexOf('date') !== -1)){
 		ops = ['=','!=','<','<=','>','>='];
 	}else{
@@ -267,6 +275,7 @@ function ki_queryBuilderUpdateOperator(field, prefix, selected)
 	ki_queryBuilderUpdateInput(operator, prefix);
 }
 
+//when an operator changes this function is called to update the input field accordingly
 function ki_queryBuilderUpdateInput(operator, prefix)
 {
 	operator = $(operator);
@@ -275,9 +284,49 @@ function ki_queryBuilderUpdateInput(operator, prefix)
 	var alias = field.val();
 	var op    = operator.val();
 	var dataType = ki_querybuilder_fields[prefix][alias]['dataType'];
-
+	var dropdownOptions = ki_querybuilder_fields[prefix][alias]['dropdownOptions'];
+	var isDropdown = (dataType.indexOf('enum') !== -1) || (dropdownOptions.length > 0)
+	
+	if(isDropdown)
+	{
+		var out = ki_queryBuilderGenerateDropdownInput(dataType, '', dropdownOptions);
+		input.replaceWith(out);
+		input = operator.next();
+		
+	}else if((dataType.indexOf('enum') === -1) && (input.prop("tagName").toLowerCase() === 'select')){
+		var out = '<input value="' /*+ input.val()*/ + '" ' + input.prop('checked') + '/>';
+		input.replaceWith(out);
+		input = operator.next();
+	}
 	input.css('display',ki_queryBuilderCalculateInputDisplay(dataType, op));
 	input.attr('type',ki_queryBuilderCalculateInputType(dataType, op));
+}
+
+/* Create dropdown input to specify search value for enum / reference field
+ dropdownOptions is only used when not enum.
+ For enums, values are determined from the datatype
+*/
+function ki_queryBuilderGenerateDropdownInput(dataType, value, dropdownOptions, inputDisplay=0)
+{
+		var out = '<select';
+		if(inputDisplay) out += ' style="display:' + inputDisplay + ';"'
+		out += '>';
+		var options = [];
+
+		if(dataType.indexOf('enum') !== -1)
+		{
+			options = dataType.substring(dataType.indexOf("('")+2, dataType.indexOf("')")).split("','");
+		}else{
+			options = dropdownOptions;
+		}
+		
+		options.forEach(function(entry){
+			out += '<option';
+			if(entry == value) out += ' selected';
+			out += '>' + entry + '</option>';
+		});
+		out += '</select>';
+		return out;
 }
 
 function ki_queryBuilderCalculateInputDisplay(dataType, op)
@@ -503,7 +552,7 @@ function ki_queryBuilderFilterRecurse(obj)
 	var out = new Object();
 	var subItems    = obj.children('ul').children('li');
 	var isGroup     = subItems.length > 0;
-	var isCondition = obj.children('select').length == 2;
+	var isCondition = obj.children('select').length > 1;
 	if(isGroup)
 	{
 		out['boolOp'] = obj.children('select').val();

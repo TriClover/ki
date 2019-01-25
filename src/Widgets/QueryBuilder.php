@@ -99,7 +99,7 @@ class QueryBuilder extends Form
 		$out .= '<fieldset class="ki_filter"><legend>Filter</legend><div id="' . $this->inPrefix . '_filter"></div></fieldset>';
 		//closing
 		$out .= '<form method="get" onsubmit="ki_queryBuilderSerialize($(\'#' . $this->inPrefix . '\'), \'' . $this->inPrefix . '\');">';
-		$out .= '<br clear="all"/><input type="submit" value="Apply" />';
+		$out .= '<br style="clear:both;"/><input type="submit" value="Apply" />';
 		$out .= '<input type="hidden" name="' . $this->inPrefix . '_filterResult" id="' . $this->inPrefix . '_filterResult" value="' . htmlspecialchars($this->previousResultJSON) . '"/>';
 		$out .= '</form></div>';
 		//script kickoff
@@ -107,7 +107,7 @@ class QueryBuilder extends Form
 		$fieldsJson = [];
 		foreach($this->fields as $field)
 		{
-			$fieldsJson[$field->alias] = ['dataType' => $field->dataType, 'nullable' => $field->nullable, 'serialNum' => $field->serialNum];
+			$fieldsJson[$field->alias] = ['dataType' => $field->dataType, 'nullable' => $field->nullable, 'serialNum' => $field->serialNum, 'dropdownOptions' => $field->dropdownOptions];
 		}
 		$fieldsJson = json_encode($fieldsJson);
 		$out .= 'ki_querybuilder_fields["' . $this->inPrefix . '"] = ' . $fieldsJson . ';';

@@ -155,7 +155,7 @@ class DataTableField
 	{
 		$db = Database::db();
 		$table = [$dt->table];
-		foreach($dt->joinTables as $t) $table[] = $t;
+		foreach($dt->joinTables as $t) $table[] = $t->joinTable;
 		
 		//get schema info for all the tables involved and fill it into the field objects
 		//creating field objects with default setup for fields not specified

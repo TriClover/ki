@@ -57,7 +57,7 @@ class DataTable extends Form
 	* translating it to a form easier for the internal code to use
 	*/
 	function __construct(string $title,
-	                     string $table,
+	                            $table,
 	                     array  $fields            = array(),
 	                     bool   $allow_add         = false,
 	                     bool   $allow_delete      = false,
@@ -271,7 +271,7 @@ class DataTable extends Form
 		if($this->show_querybuilder)
 		{
 			$out .= $this->queryBuilder->getHTML();
-			$out .= '<br clear="both"/>';
+			$out .= '<br style="clear:both;"/>';
 		}
 
 		//feedback on previous submit
@@ -357,11 +357,10 @@ class DataTable extends Form
 							&& !empty($this->fields[$col]->fkReferencedField)
 							&& ($this->fields[$col]->dropdownLimit >= $this->fields[$col]->numOptions)))
 					{
-						$inputAttributes[] = 'value="' . $value . '" ';
 						$json_data[$inputName] = $value;
 						
 						$inputAttributes[] = 'name="' . $inputName . '" id="' . $inputName . '"';
-						$inputAttributes[] = $this->stringifyConstraints($col);
+						$inputAttributes[] = $this->stringifyConstraints($col, true);
 						$inputAttributes[] = 'class="ki_table_input"';
 						$dataCell .= "\n     " . '<select ' . implode(' ', $inputAttributes) . '>';
 						if($this->fields[$col]->nullable == 'YES')
@@ -443,7 +442,7 @@ class DataTable extends Form
 					$buttonName = $this->inputId('0', $fqRow, 'submit');
 					$dataRow .=  '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" value="💾" class="ki_button_save" title="Save"/>';
 				}
-				if($this->allow_edit || ($this->allow_delete !== false))
+				if($this->allow_edit && ($this->allow_delete !== false))
 					$dataRow .= '<span class="ki_noscript_spacer"> - </span>';
 				if($this->allow_delete !== false)
 				{
@@ -564,8 +563,10 @@ class DataTable extends Form
 		{
 			$arrIV = $this->inPrefix . 'inputValues';
 			$js = '<script>var inputValues = ' . json_encode($json_data) . ';';
-			if(!self::$anyPrinted) $js .= <<<'HTML'
-			$(".ki_button_save").css("position","absolute");
+			if(!self::$anyPrinted)
+			{
+				if($this->allow_delete) $js .= '$(".ki_button_save").css("position","absolute");';
+				$js .= <<<'HTML'
 			$(".ki_noscript_spacer").remove();
 			$(".ki_table input,.ki_table select").on("change keydown keyup blur", function(){
 				ki_setEditVisibility($(this).parent().parent().find('.ki_button_save'), inputValues);
@@ -576,6 +577,7 @@ class DataTable extends Form
 				search_contains: true
 			});
 HTML;
+			}
 			$js = str_replace('inputValues',$arrIV,$js);
 			$js .= '</script>';
 			$out .= $js;
@@ -708,11 +710,12 @@ END_SQL;
 	* @param col a column name (FQ)
 	* @return constraints for column in HTML form ready to be inserted into an input
 	*/
-	protected function stringifyConstraints($col)
+	protected function stringifyConstraints($col, $isDropdown = false)
 	{
 		$out = '';
 		foreach($this->fields[$col]->constraints as $cname => $cval)
 		{
+			if($isDropdown && $cname="type") continue;
 			$out .= $cname;
 			if($cval !== NULL) $out .= '="' . $cval . '"';
 			$out .= ' ';
