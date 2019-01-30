@@ -403,6 +403,9 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 	margin:0;
 	padding:0;
 }
+.ki_querybuilder ul li select[multiple]{
+	vertical-align:bottom;
+}
 .ki_querybuilder ul li input[type=checkbox]{
 	height:auto;
 	margin:0 1em 0 1em;
@@ -415,7 +418,7 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 .ki_querybuilder ol li select{
 	margin:1px;
 }
-.ki_querybuilder button{
+.ki_querybuilder button:not(.ui-multiselect){
 	width:auto;
 	font-weight:normal;
 	height:19px;
@@ -426,10 +429,15 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 	top:1px;
 	clear:none;
 }
-.ki_querybuilder button:last-child,.ki_querybuilder button+button~button{
+.ki_querybuilder button:last-child, .ki_querybuilder button+button~button:not(.ui-multiselect){
 	color:#F00;
 	width:20px;
 	margin-left:2px;
 	position:absolute;
 	right:-25px;
+}
+
+/* Modify third party widgets */
+.ui-multiselect{
+	font-size:12px;
 }

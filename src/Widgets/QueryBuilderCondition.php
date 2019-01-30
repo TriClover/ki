@@ -83,16 +83,71 @@ class QueryBuilderCondition
 			$relatedTableDisplayField    = $relation->relatedTableDisplayFieldFQ();
 			$relationTableRelatedFKField = $relation->relationTableRelatedFKFieldFQ();
 			$relationTableMainFKField    = $relation->relationTableMainFKFieldFQ();
-			$out = <<<QUERY_END
-SELECT COUNT(*)
-FROM $relatedTable
-WHERE $out AND
-	$relatedTablePKField IN(
-		SELECT $relationTableRelatedFKField
-		FROM $relationTable
-		WHERE $relationTableMainFKField = $mainTablePKField)
+
+			//new
+			if($this->value == '') $this->value = [];
+			else                   $this->value = explode('', $this->value);
+			$numTerms = count($this->value);
+			
+			$literalTable = [];
+			foreach($this->value as $val)
+			{
+				$val = $db->esc($val);
+				if(!is_numeric($val)) $val = '"'.$val.'"';
+				$literalTable[] = $val;
+			}
+			$literalTable = implode(',', $literalTable);
+			
+			$subquery_howManyDesiredTermsArePresent = <<<QUERY_END
+			SELECT COUNT(DISTINCT $relationTableRelatedFKField)
+			FROM $relationTable
+			WHERE $relationTableMainFKField = $mainTablePKField
+				AND $relationTableRelatedFKField IN($literalTable)
 QUERY_END;
-			$out = '(' . $out . ') >0';
+			$subquery_findExtraTerms = <<<QUERY_END
+			SELECT 1
+			FROM $relationTable
+			WHERE $relationTableMainFKField = $mainTablePKField
+				AND $relationTableRelatedFKField NOT IN($literalTable)
+QUERY_END;
+
+			switch($this->operator)
+			{
+				case '=':
+				if($numTerms > 0)
+				{
+					$out = "($subquery_howManyDesiredTermsArePresent) = $numTerms"
+						. ' AND '
+						. "NOT EXISTS($subquery_findExtraTerms)";
+				}else{
+					$out = "NOT EXISTS(SELECT 1 FROM $relationTable WHERE $relationTableMainFKField = $mainTablePKField)";
+				}
+				break;
+				
+				case '!=':
+				if($numTerms > 0)
+				{
+					$out = "($subquery_howManyDesiredTermsArePresent) != $numTerms"
+						. ' OR '
+						. "EXISTS($subquery_findExtraTerms)";
+				}else{
+					$out = "EXISTS(SELECT 1 FROM $relationTable WHERE $relationTableMainFKField = $mainTablePKField)";
+				}
+				break;
+				
+				case 'contains':
+				if($numTerms > 0)
+					$out = "($subquery_howManyDesiredTermsArePresent) = $numTerms";
+				else
+					$out = '1';
+				break;
+				
+				case 'contains any':
+				if($numTerms > 0)
+					$out = "($subquery_howManyDesiredTermsArePresent)>0";
+				else
+					$out = '1';
+			}
 		}
 		
 		return $out;

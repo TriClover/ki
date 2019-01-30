@@ -6,16 +6,17 @@ function ki_setupQueryBuilder(prefix)
 	var previousResult = $('#' + prefix + '_filterResult').val();
 	if(previousResult)
 	{
-		//previousResult = JSON.parse(previousResult);
 		previousResult = ki_queryBuilderParseBinary(previousResult, prefix);
 	}
 	
+	var builderId = '#' + prefix + '_filter';
 	if(previousResult && previousResult['rootConditionGroup'])
 	{
-		$('#' + prefix + '_filter').html(ki_queryBuilderGroup(prefix, previousResult['rootConditionGroup']['boolOp'], previousResult['rootConditionGroup']['conditions'], true));
+		$(builderId).html(ki_queryBuilderGroup(prefix, previousResult['rootConditionGroup']['boolOp'], previousResult['rootConditionGroup']['conditions'], true));
 	}else{
-		$('#' + prefix + '_filter').html(ki_queryBuilderGroup(prefix, 'AND', [], true));
+		$(builderId).html(ki_queryBuilderGroup(prefix, 'AND', [], true));
 	}
+	$(builderId + ' select[multiple]').multiselect({selectedList:2,header:false});
 }
 
 function ki_queryBuilder_serial2alias(prefix, serialNum)
@@ -31,7 +32,7 @@ function ki_queryBuilder_serial2alias(prefix, serialNum)
 function ki_queryBuilderParseBinary(data, prefix)
 {
 	var validBool = ['AND','OR','XOR'];
-	var validOps = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex",'is NULL','is NOT NULL'];
+	var validOps = ki_querybuilder_operators;
 	
 	data = base64ToBin(data);
 	var out = new Object();
@@ -223,7 +224,7 @@ function ki_queryBuilderCondition(prefix, field, operator, value)
 	var inputDisplay = ki_queryBuilderCalculateInputDisplay(dataType, operator);
 	var inputType = ki_queryBuilderCalculateInputType(dataType, operator);
 	var checked = (inputType == 'checkbox' && value) ? ' checked' : '';
-	if(dataType.indexOf('enum') !== -1 || dropdownOptions.length > 0)
+	if(dataType.indexOf('enum') !== -1 || dropdownOptions.length > 0 || Object.keys(dropdownOptions).length > 0)
 	{
 		out += ki_queryBuilderGenerateDropdownInput(dataType, value, dropdownOptions, inputDisplay);
 	}else{
@@ -239,7 +240,7 @@ function ki_queryBuilderGenerateOperatorOptions(alias, prefix, selected)
 	if(typeof(selected) === 'undefined') selected = '';
 	var type = ki_querybuilder_fields[prefix][alias]['dataType'];
 	var nullable = ki_querybuilder_fields[prefix][alias]['nullable'] == 'YES';
-	
+
 	var ops = [];
 	if(type == 'tinyint(1)')
 	{
@@ -248,10 +249,12 @@ function ki_queryBuilderGenerateOperatorOptions(alias, prefix, selected)
 		ops = ['=','!='];
 	}else if((type.indexOf('int') !== -1) || (type.indexOf('date') !== -1)){
 		ops = ['=','!=','<','<=','>','>='];
+	}else if(type.indexOf('virtual') !== -1){
+		ops = ['=','!=','contains','contains any'];
 	}else{
 		ops = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex"];
 	}
-	if(nullable)
+	if(nullable && (type.indexOf('virtual') == -1))
 	{
 		ops.push('is NULL');
 		ops.push('is NOT NULL');
@@ -285,21 +288,24 @@ function ki_queryBuilderUpdateInput(operator, prefix)
 	var op    = operator.val();
 	var dataType = ki_querybuilder_fields[prefix][alias]['dataType'];
 	var dropdownOptions = ki_querybuilder_fields[prefix][alias]['dropdownOptions'];
-	var isDropdown = (dataType.indexOf('enum') !== -1) || (dropdownOptions.length > 0)
+	var isDropdown = (dataType.indexOf('enum') !== -1) || (dropdownOptions.length > 0) || (Object.keys(dropdownOptions).length > 0)
 	
 	if(isDropdown)
 	{
 		var out = ki_queryBuilderGenerateDropdownInput(dataType, '', dropdownOptions);
 		input.replaceWith(out);
 		input = operator.next();
-		
-	}else if((dataType.indexOf('enum') === -1) && (input.prop("tagName").toLowerCase() === 'select')){
+	}
+	else if((dataType.indexOf('enum') === -1) && (input.prop("tagName").toLowerCase() === 'select'))
+	{
 		var out = '<input value="' /*+ input.val()*/ + '" ' + input.prop('checked') + '/>';
 		input.replaceWith(out);
 		input = operator.next();
 	}
 	input.css('display',ki_queryBuilderCalculateInputDisplay(dataType, op));
 	input.attr('type',ki_queryBuilderCalculateInputType(dataType, op));
+	
+	if(isDropdown && dataType == 'virtual') input.multiselect({selectedList:2,header:false});
 }
 
 /* Create dropdown input to specify search value for enum / reference field
@@ -308,25 +314,47 @@ function ki_queryBuilderUpdateInput(operator, prefix)
 */
 function ki_queryBuilderGenerateDropdownInput(dataType, value, dropdownOptions, inputDisplay=0)
 {
-		var out = '<select';
-		if(inputDisplay) out += ' style="display:' + inputDisplay + ';"'
-		out += '>';
-		var options = [];
+	var unitSeparator = String.fromCharCode(31);
+	var valArray = false;
+	if(value.indexOf(unitSeparator) != -1)
+	{
+		value = value.split(unitSeparator);
+		valArray = true;
+	}
+	var out = '<select';
+	var styles = '';
+	if(dataType == 'virtual') out += ' multiple';
+	if(inputDisplay) styles += 'display:' + inputDisplay + ';'
+	out += ' style="' + styles + '"';
+	out += '>';
+	var options = [];
 
-		if(dataType.indexOf('enum') !== -1)
-		{
-			options = dataType.substring(dataType.indexOf("('")+2, dataType.indexOf("')")).split("','");
-		}else{
-			options = dropdownOptions;
-		}
-		
+	if(dataType.indexOf('enum') !== -1)
+	{
+		options = dataType.substring(dataType.indexOf("('")+2, dataType.indexOf("')")).split("','");
+	}else{
+		options = dropdownOptions;
+	}
+	
+	if(Array.isArray(options))
+	{
 		options.forEach(function(entry){
 			out += '<option';
-			if(entry == value) out += ' selected';
+			if(!valArray && entry == value) out += ' selected';
+			if(valArray && value.includes(entry)) out += ' selected';
 			out += '>' + entry + '</option>';
 		});
-		out += '</select>';
-		return out;
+	}else{
+		Object.keys(options).forEach(function(key,index){
+			out += '<option value="' + key + '"';
+			var entry = options[key];
+			if(!valArray && key == value) out += ' selected';
+			if(valArray && value.includes(key)) out += ' selected';
+			out += '>' + entry + '</option>';
+		});
+	}
+	out += '</select>';
+	return out;
 }
 
 function ki_queryBuilderCalculateInputDisplay(dataType, op)
@@ -361,8 +389,7 @@ function ki_queryBuilderAddGroup(btn, prefix)
 	newCond.innerHTML = ki_queryBuilderGroup(prefix);
 	btn.parentNode.lastChild.appendChild(newCond);
 }
-
-var ki_querybuilder_operators = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex",'is NULL','is NOT NULL'];
+var ki_querybuilder_operators = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex",'is NULL','is NOT NULL','contains any'];
 
 /**
 * form: the form whose data will be serialized
@@ -584,6 +611,8 @@ function ki_queryBuilderFilterRecurse(obj)
 		out['field'] = field.val();
 		out['operator'] = operator.val();
 		out['value'] = (value.attr('type') == 'checkbox') ? (value.is(':checked')?'1':'0') : value.val();
+		if(Array.isArray(out['value']))
+			out['value'] = out['value'].join(String.fromCharCode(31));
 		out['inlineBytes'] = 5;
 		out['valueBytes'] = out['value'].length;
 		return out;

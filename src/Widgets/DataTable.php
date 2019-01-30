@@ -381,7 +381,6 @@ class DataTable extends Form
 						$inputAttributes[] = $this->stringifyConstraints($col);
 						$inputAttributes[] = 'class="ki_table_input"';
 						
-						
 						$valSets = explode(chr(30), $value);
 						$valKeys = empty($valSets[0]) ? [] : explode(chr(31), $valSets[0]);
 						$valDisp = empty($valSets[1]) ? [] : explode(chr(31), $valSets[1]);
@@ -571,11 +570,7 @@ class DataTable extends Form
 			$(".ki_table input,.ki_table select").on("change keydown keyup blur", function(){
 				ki_setEditVisibility($(this).parent().parent().find('.ki_button_save'), inputValues);
 			});
-			$(".ki_table select[multiple]").chosen({
-				disable_search_threshold: 6,
-				placeholder_text_multiple: "None",
-				search_contains: true
-			});
+			$(".ki_table select[multiple]").multiselect({selectedList:2,header:false});
 HTML;
 			}
 			$js = str_replace('inputValues',$arrIV,$js);
@@ -648,7 +643,7 @@ END_SQL;
 		
 		$fields = implode(',', $fields);
 		$query = 'SELECT ' . ($limit?'SQL_CALC_FOUND_ROWS ':'') . $fields
-			. ' FROM ' . $this->table . ' ' . $this->joinString . $whereClause . $sortClause;
+			. ' FROM `' . $this->table . '` ' . $this->joinString . $whereClause . $sortClause;
 		if($limit) $query .=  ' LIMIT ' . $limit_start . ',' . $this->rows_per_page;
 		return $query;
 	}

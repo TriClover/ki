@@ -22,7 +22,7 @@ class QueryBuilder extends Form
 	public    $previousResultJSON = NULL;
 	public    $previousResult = NULL;
 	
-	const validOps = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex",'is NULL','is NOT NULL'];
+	const validOps = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex",'is NULL','is NOT NULL','contains any'];
 	const validBool = ['AND','OR','XOR'];
 	
 	/**
@@ -108,6 +108,7 @@ class QueryBuilder extends Form
 		foreach($this->fields as $field)
 		{
 			$fieldsJson[$field->alias] = ['dataType' => $field->dataType, 'nullable' => $field->nullable, 'serialNum' => $field->serialNum, 'dropdownOptions' => $field->dropdownOptions];
+			if($field->dataType == 'virtual') $fieldsJson[$field->alias]['dropdownOptions'] = $field->manyToMany->dropdownOptions;
 		}
 		$fieldsJson = json_encode($fieldsJson);
 		$out .= 'ki_querybuilder_fields["' . $this->inPrefix . '"] = ' . $fieldsJson . ';';

@@ -139,12 +139,13 @@ class DataTableMultiRelation
 		$ddRes = $db->query($ddQuery, [], 'Getting possible value list for many-to-many relation');
 		foreach($ddRes as $ddRow)
 		{
-			$this->dropdownOptions[$ddRow[$this->relatedTablePKFieldFQ(false)]]
-				= $ddRow[$this->relatedTablePKFieldFQ(false)]
-					. (($this->relatedTableDisplayField != $this->relatedTablePKField)
-						? (': ' . $ddRow[$this->relatedTableDisplayFieldFQ(false)])
-						: '');
-		}			
+			$relatedTablePKVal      = $ddRow[$this->relatedTablePKFieldFQ(false)];
+			$relatedTableDisplayVal = $ddRow[$this->relatedTableDisplayFieldFQ(false)];
+			$pkAndDisplayAreSameField = $this->relatedTableDisplayField == $this->relatedTablePKField;
+			$dispString = $relatedTablePKVal;
+			if(!$pkAndDisplayAreSameField) $dispString .= ': ' . $relatedTableDisplayVal;
+			$this->dropdownOptions[$relatedTablePKVal] = $dispString;
+		}
 		return true;
 	}
 	
