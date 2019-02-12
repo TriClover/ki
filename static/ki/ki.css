@@ -418,7 +418,7 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 .ki_querybuilder ol li select{
 	margin:1px;
 }
-.ki_querybuilder button:not(.ui-multiselect){
+.ki_filter button:not(.ui-multiselect){
 	width:auto;
 	font-weight:normal;
 	height:19px;

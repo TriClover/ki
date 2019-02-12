@@ -22,14 +22,19 @@ class QueryBuilder extends Form
 	public    $previousResultJSON = NULL;
 	public    $previousResult = NULL;
 	
+	//child objects
+	protected $saver = NULL;
+	
+	//consts from the javascript
 	const validOps = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex",'is NULL','is NOT NULL','contains any'];
 	const validBool = ['AND','OR','XOR'];
 	
 	/**
 	* @param fields an array of DataTableField objects. Should have all members filled, not just the ones that get filled from the constructor.
 	* @param title Unique title to differentiate this QueryBuilder's inputs from others
+	* @param saver Whether to use a FormSaver
 	*/
-	function __construct(array $fields, string $title)
+	function __construct(array $fields, string $title, bool $saver = false)
 	{
 		foreach($fields as $key => $f)
 			if($f->show === false)
@@ -51,6 +56,11 @@ class QueryBuilder extends Form
 		}
 		$freshRes = new QueryBuilderResult($aliasesCheckedByDefault, new QueryBuilderConditionGroup('AND', []), []);
 		$this->previousResult = $freshRes;
+		
+		if($saver)
+		{
+			$this->saver = new FormSaver('ki_querybuilder_'.$title, 'ki_queryBuilderGetSerialData', 'ki_setupQueryBuilder');
+		}
 	}
 	
 	/**
@@ -58,7 +68,13 @@ class QueryBuilder extends Form
 	*/
 	protected function getHTMLInternal()
 	{
-		$out = '<div class="ki_querybuilder" id="' . $this->inPrefix . '">';
+		$saver = '';
+		if($this->saver != NULL)
+		{
+			$saver = '<div style="float:right;">' . $this->saver->getHTML() . '</div>';
+		}
+		
+		$out = '<div class="ki_querybuilder" id="' . $this->inPrefix . '">' . $saver;
 		//field list
 		$out .= '<fieldset class="ki_showOrder"><legend>Show Fields</legend><ol>';
 		foreach($this->previousResult->fieldsToShow as $alias)
@@ -122,8 +138,22 @@ class QueryBuilder extends Form
 	*/
 	protected function handleParamsInternal()
 	{
-		if(!isset($this->get[$this->inPrefix . '_filterResult'])) return null;
-		$json = $this->get[$this->inPrefix . '_filterResult'];
+		$post = $this->post;
+		$get = $this->get;
+		
+		$formDataFromSaver = '';
+		if($this->saver) $formDataFromSaver = $this->saver->handleParams($post, $get);
+		if($formDataFromSaver != '')
+		{
+			$get[$this->inPrefix . '_filterResult'] = $formDataFromSaver;
+		}
+		elseif(isset($post[$this->inPrefix . '_filterResult']))
+		{
+			$get[$this->inPrefix . '_filterResult'] = $post[$this->inPrefix . '_filterResult'];
+		}
+
+		if(!isset($get[$this->inPrefix . '_filterResult'])) return null;
+		$json = $get[$this->inPrefix . '_filterResult'];
 		$this->previousResultJSON = $json;
 		//$data = json_decode($json, true, 512, JSON_BIGINT_AS_STRING|JSON_OBJECT_AS_ARRAY);
 		$data = array_values(unpack('C*', base64_decode($json)));

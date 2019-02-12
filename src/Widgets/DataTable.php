@@ -47,7 +47,6 @@ class DataTable extends Form
 	//state, internal
 	protected $setupOK       = true;    //Whether the setup was successful. If false, no other features will try to do anything.
 	protected $outputMessage = array();
-	static $anyPrinted       = false;   //Whether any DataTable object has generated its HTML. Only the first one will contain stuff that only needs to be printed once.
 	
 	//const
 	protected $textTypes = array('email', 'password', 'search', 'tel', 'text', 'url'); //html form types where attributes like "size" and "maxlength" are valid
@@ -80,9 +79,9 @@ class DataTable extends Form
 		$this->show_querybuilder = $show_querybuilder;
 		$this->show_querylist    = $show_querylist;
 		$this->show_querysave    = $show_querysave;
-		$this->eventCallbacks    = $eventCallbacks;
+		$this->eventCallbacks    = ($eventCallbacks !== NULL) ? $eventCallbacks : new DataTableEventCallbacks(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 		$this->buttonCallbacks   = $buttonCallbacks;
-		
+
 		//calculate more setup info
 		$this->inPrefix = 'ki_datatable_' . htmlspecialchars($title) . '_';
 		
@@ -228,7 +227,12 @@ class DataTable extends Form
 		}
 		
 		//create query builder
-		$this->queryBuilder = new QueryBuilder($this->fields, $this->title);
+		$this->queryBuilder = new QueryBuilder($this->fields, $this->title, $show_querylist);
+	}
+	
+	public function getInPrefix()
+	{
+		return $this->inPrefix;
 	}
 	
 	/**
@@ -236,7 +240,7 @@ class DataTable extends Form
 	*/
 	protected function getHTMLInternal()
 	{
-		Log::trace('Getting HTML for dataTable');
+		Log::trace('Getting HTML for dataTable ' . $this->title);
 		
 		//check preconditions
 		if(!$this->setupOK) return '';
@@ -298,7 +302,7 @@ class DataTable extends Form
 		}
 		
 		//rows to display and/or edit
-		$out .= "\n" . '  <div class="ki_table">';
+		$out .= "\n" . '  <div class="ki_table" id="' . $this->title . '">';
 		if($this->rows_per_page > 0) //for add-only forms with no output, skip showing headers. The field names are in the placeholders anyway.
 		{
 			$headerRow = "\n" . '   <div>';
@@ -439,7 +443,7 @@ class DataTable extends Form
 				if($this->allow_edit)
 				{
 					$buttonName = $this->inputId('0', $fqRow, 'submit');
-					$dataRow .=  '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" value="💾" class="ki_button_save" title="Save"/>';
+					$dataRow .=  '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" value="💾" class="ki_button_save" title="Save" onclick="' . htmlspecialchars($this->eventCallbacks->onclickEdit) . '"/>';
 				}
 				if($this->allow_edit && ($this->allow_delete !== false))
 					$dataRow .= '<span class="ki_noscript_spacer"> - </span>';
@@ -448,7 +452,7 @@ class DataTable extends Form
 					$buttonName = $this->inputId('0', $fqRow, 'delete');
 					$dataRow .= '<div class="ki_button_confirm_container">';
 					$dataRow .= '<button type="button" id="' . $buttonName . '" class="ki_button_del" title="Delete" style="">❌</button>';
-					$dataRow .= '<div class="ki_button_confirm"><input type="submit" name="' . $buttonName . '" value="Confirm Delete" formnovalidate /></div>';
+					$dataRow .= '<div class="ki_button_confirm"><input type="submit" name="' . $buttonName . '" value="Confirm Delete" formnovalidate onclick="' . htmlspecialchars($this->eventCallbacks->onclickDelete) . '"/></div>';
 					$dataRow .= '</div>';
 				}
 				$dataRow .= "\n" . '    </div>';
@@ -459,7 +463,7 @@ class DataTable extends Form
 				$dataRow .= "\n" . '    <div class="ki_table_action">' . $pageInput;
 				foreach($this->buttonCallbacks as $cbName => $cbFunc)
 				{
-					$buttonName = $this->inputId('0', $fqRow, 'callback_'.$cbFunc);
+					$buttonName = $this->inputId('0', $fqRow, 'callback_'.$cbName);
 					$dataRow .= '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" class="ki_button_action" value="' . $cbName . '" formnovalidate />';
 				}
 				$dataRow .= "\n" . '    </div>';
@@ -548,7 +552,7 @@ class DataTable extends Form
 				$out .= $addingCell;
 				$out .= "\n    " . '</div>';
 			}
-			$out .= "\n    " . '<div class="ki_table_action">' . "\n     " . $pageInput . "\n     " . '<input type="submit" title="Add" value="✚" class="ki_button_add"/>' . "\n    " . '</div>';
+			$out .= "\n    " . '<div class="ki_table_action">' . "\n     " . $pageInput . "\n     " . '<input type="submit" title="Add" value="✚" class="ki_button_add" onclick="' . htmlspecialchars($this->eventCallbacks->onclickAdd) . '"/>' . "\n    " . '</div>';
 			$out .= "\n   " . '</form>';
 		}
 		$out .= "\n" . '  </div>';
@@ -562,22 +566,19 @@ class DataTable extends Form
 		{
 			$arrIV = $this->inPrefix . 'inputValues';
 			$js = '<script>var inputValues = ' . json_encode($json_data) . ';';
-			if(!self::$anyPrinted)
-			{
-				if($this->allow_delete) $js .= '$(".ki_button_save").css("position","absolute");';
-				$js .= <<<'HTML'
-			$(".ki_noscript_spacer").remove();
-			$(".ki_table input,.ki_table select").on("change keydown keyup blur", function(){
-				ki_setEditVisibility($(this).parent().parent().find('.ki_button_save'), inputValues);
-			});
-			$(".ki_table select[multiple]").multiselect({selectedList:2,header:false});
-HTML;
-			}
+			$htmlId = '#' . $this->title;
+			if($this->allow_delete)
+				$js .= '$("' . $htmlId . ' .ki_button_save").css("position","absolute");';
+			$js .= '$("' . $htmlId . ' .ki_noscript_spacer").remove();';
+			$js .= '$("' . $htmlId . '.ki_table input,' . $htmlId . '.ki_table select").on("change keydown keyup blur", function(){';
+			$js .= 'ki_setEditVisibility($(this).parent().parent().find(".ki_button_save"), inputValues);';
+			$js .= '});';
+			$js .= '$("' . $htmlId . '.ki_table select[multiple]").multiselect({selectedList:2,header:false});';
+			
 			$js = str_replace('inputValues',$arrIV,$js);
 			$js .= '</script>';
 			$out .= $js;
 		}
-		self::$anyPrinted = true;
 		return $out;
 	}
 	
@@ -792,7 +793,7 @@ END_SQL;
 			$deletePrefix = $this->inPrefix . 'delete_';
 			$deleteKeys = array();
 			$callbackPrefix = $this->inPrefix . 'callback_';
-			
+
 			foreach($post as $key => $value)
 			{
 				if(mb_strpos($key,$deletePrefix) === 0) //check for delete button
@@ -871,14 +872,18 @@ END_SQL;
 						Log::warn('DataTable callback button had wrong number of primary key values');
 						continue;
 					}
-					if(!isset($this->buttonCallbacks[$cbName]) || $this->buttonCallbacks[$cbName] != $cbFunc)
+					if(!isset($this->buttonCallbacks[$cbName]))// || $this->buttonCallbacks[$cbName] != $cbFunc)
 					{
-						Log::warn('DataTable callback button specificed invalid function/name: ' . $cbName . ',' . $cbFunc);
+						Log::warn('DataTable callback button specified invalid function/name: ' . $cbName . ',' . $cbFunc);
 						continue;
 					}
 					$pkNamed = array();
-					foreach($this->pk as $index => $pname) $pkNamed[$pname] = $pk_values[$index];
-					$cbFunc($pkNamed);
+					foreach($pk_values as $fqName => $val)
+					{
+						$name = $this->fields[$fqName]->name;
+						$pkNamed[$name] = $val;
+					}
+					$this->buttonCallbacks[$cbName]($pkNamed);
 				}
 				elseif(mb_strpos($key,$editPrefix) === 0) //check for edit input
 				{
@@ -1203,16 +1208,8 @@ END_SQL;
 		//take care of queryBuilder
 		if($this->show_querybuilder)
 		{
-			if(isset($post['ki_querybuilder_' . $this->title . '_filterResult']))
-			{
-				$this->queryBuilder->handleParams(NULL, $post);
-			}
-			elseif(isset($get['ki_querybuilder_' . $this->title . '_filterResult']))
-			{
-				$this->queryBuilder->handleParams(NULL, $get);
-			}else{
-				$this->queryBuilder->handleParams();
-			}
+			$this->queryBuilder->handleParams($post, $get);
+	
 			if($this->queryBuilder->previousResult !== NULL && !empty($this->queryBuilder->previousResult->fieldsToShow))
 			{
 				$newFields = [];

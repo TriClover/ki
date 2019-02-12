@@ -1,9 +1,15 @@
 var ki_querybuilder_fields = ki_querybuilder_fields || new Object();
+var ki_querybuilders_setup = new Object();
 
-function ki_setupQueryBuilder(prefix)
+function ki_setupQueryBuilder(prefix, data = 0)
 {
+	//calls after the first, for a given querybuilder, only count if data is given explicitly
+	if(ki_querybuilders_setup[prefix] && !data) return;
+	ki_querybuilders_setup[prefix] = 1;
+	
 	$('#' + prefix + ' ol').sortable();
-	var previousResult = $('#' + prefix + '_filterResult').val();
+	var previousResult = data;
+	if(!previousResult) previousResult = $('#' + prefix + '_filterResult').val();
 	if(previousResult)
 	{
 		previousResult = ki_queryBuilderParseBinary(previousResult, prefix);
@@ -391,6 +397,14 @@ function ki_queryBuilderAddGroup(btn, prefix)
 }
 var ki_querybuilder_operators = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex",'is NULL','is NOT NULL','contains any'];
 
+//lookup form obj and call ki_queryBuilderSerialize then return the data it generated
+function ki_queryBuilderGetSerialData(name)
+{
+	var fullName = name;
+	ki_queryBuilderSerialize($('#'+fullName), fullName);
+	return $('#' + fullName + '_filterResult').val();
+}
+
 /**
 * form: the form whose data will be serialized
 * prefix: the ID prefix of the associated QueryBuilder
@@ -543,8 +557,6 @@ function ki_queryBuilderSerialize(form, prefix)
 	
 	out = binToBase64(out);
 	$('#' + prefix + '_filterResult').val(out);
-	
-	//$('#' + prefix + '_filterResult').val(JSON.stringify(data));
 }
 
 function ki_queryBuilderSerializerGather(form, prefix)
@@ -640,5 +652,15 @@ function arrayDynamicAssign(a, indexList, val)
 		out = out[indexList[i]];
 	}
 	out[indexList[indexList.length-1]] = val;
+}
 
+function ki_formsaver_deliverSerialization(button, serializer, name)
+{
+	var jButton = $(button);
+	var dataInput;
+	if(jButton.val() == '✚' || jButton.val() == '💾') dataInput = jButton.parent().parent().children('div').eq(2).children('input');
+	else if(jButton.val() == 'Confirm Delete')        dataInput = jButton.parent().parent().parent().parent().children('div').eq(2).children('input');
+	else return;
+	var serialData = window[serializer](name);
+	dataInput.val(serialData);
 }

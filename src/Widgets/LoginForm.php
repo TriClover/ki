@@ -200,7 +200,7 @@ class LoginForm extends Form
 		$fields[] = new DataTableField('enabled',       'ki_users', NULL, false, false, 1);
 		$fields[] = new DataTableField('last_active',   'ki_users', NULL, false, false, false);
 		$events = new DataTableEventCallbacks($reg_onAdd, NULL, NULL, $reg_beforeAdd, NULL, NULL);
-		return new DataTable('register', 'ki_users', $fields, true, false, false, 0, false, false, false, false, $events, NULL);
+		return new DataTable('register', 'ki_users', $fields, true, false, false, 0, false, false, false, false, $events);
 	}
 }
 
