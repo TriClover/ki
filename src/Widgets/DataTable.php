@@ -13,7 +13,7 @@ class DataTable extends Form
 {
 	//setup parameters
 	public    $title;            //title for this widget - needed to separate multiple DataTables on the same page
-	public    $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first matching foreign key found (FK in base table connected to PK in other table).
+	public    $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first matching foreign key found (FK in base table connected to PK in other table). If a given table to join is referenced by more than one field it will get joined once for each field, with alias in the form `referencedTable_referencingFieldInMainTable`
 	public    $fields;           //array of DataTableField objects specifying what to do with each field. Fields not specified will get the defaults shown in the DataTableField class. A field with NULL for the name overrides what is used for fields not specified.
 	protected $allow_add;        //true: allow adding rows. false: dont.
 	protected $allow_delete;     //true: allow deleting rows. false: don't. string: allow but set this field=false (table.field) instead of actually deleting
@@ -64,13 +64,13 @@ class DataTable extends Form
 	                     int    $rows_per_page     = 50,
 	                     bool   $show_exports      = false,
 	                     bool   $show_querybuilder = false,
-	                     bool   $show_querylist    = false, //todo
+	                     bool   $show_querylist    = false,
 	                     bool   $show_querysave    = false, //todo
 	    DataTableEventCallbacks $eventCallbacks    = NULL,
 						 array  $buttonCallbacks   = NULL)
 	{
 		//save parameters
-		$this->title             = $title;
+		$this->title             = preg_replace('/[^A-Za-z0-9_]/','',$title);
 		$this->allow_add         = $allow_add;
 		$this->allow_delete      = $allow_delete;
 		$this->filter            = mb_strlen($filter) > 0 ? $filter : '1';
@@ -83,7 +83,7 @@ class DataTable extends Form
 		$this->buttonCallbacks   = $buttonCallbacks;
 
 		//calculate more setup info
-		$this->inPrefix = 'ki_datatable_' . htmlspecialchars($title) . '_';
+		$this->inPrefix = 'ki_datatable_' . htmlspecialchars($this->title) . '_';
 		
 		//identify keys for multi-table
 		if(is_array($table))
@@ -130,7 +130,7 @@ class DataTable extends Form
 			$this->setupOK = false;
 			return;
 		}
-		
+
 		//joins, for multi-table
 		$joins = [];
 		if(!empty($this->joinTables))
@@ -205,9 +205,10 @@ class DataTable extends Form
 				if($fval->nullable == 'NO'
 					&& (mb_strpos($fval->extra,'auto_increment') === false)
 					&& $fval->add === false
-					&& $fval->defaultValue === NULL)
+					&& $fval->defaultValue === NULL
+					&& ($fval->fkReferencedTable === NULL || $fval->fkReferencedField === NULL))
 				{
-					Log::error('In DataTable . ' . $this->title . ' field ' . $fname . ' is set NOT NULL with no auto_increment, but was configured as not editable in new rows, and has no default value here or in the schema. Thus adding new rows is not possible.');
+					Log::error('In DataTable ' . $this->title . ' field ' . $fname . ' is set NOT NULL with no auto_increment and no default value here or in the schema, but was configured as not editable in new rows, nor is it a foreign key. Thus adding new rows is not possible.');
 					$this->allow_add = false;
 					foreach($this->fields as $fieldname => $field)
 						$this->fields[$fieldname]->add = false;
@@ -221,7 +222,7 @@ class DataTable extends Form
 		{
 			if(!array_key_exists($this->allow_delete, $this->fields))
 			{
-				Log::error('DataTable ' . $title . ' specified non existent deletion-tracking field ' . $this->allow_delete);
+				Log::error('DataTable ' . $this->title . ' specified non existent deletion-tracking field ' . $this->allow_delete);
 				$this->allow_delete = false;
 			}
 		}
@@ -748,7 +749,6 @@ END_SQL;
 		if($shouldCheckPost)
 		{
 			if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
-			
 			//Export immediately triggers output and halt
 			if($this->show_exports
 				&& isset($post[$this->inPrefix.'_export'])
@@ -1147,6 +1147,47 @@ END_SQL;
 						if($this->fields[$col]->dataType == 'virtual')
 						{
 							$virtuals[$col] = $value;
+						}
+						elseif($this->fields[$col]->table != $this->table)
+						{
+							//find the corresponding joinTable
+							$setterField = NULL;
+							$referencedUniqueField = NULL;
+							$realJoinTableName = '';
+							foreach($this->joinTables as $joinTable)
+							{
+								if($joinTable->joinTableAlias == $this->fields[$col]->table)
+								{
+									$setterField = $joinTable->mainTableFKField;
+									$realJoinTableName = $joinTable->joinTable;
+									$referencedUniqueField = $joinTable->joinTableReferencedUniqueField;
+									break;
+								}
+							}
+							if($setterField === NULL)
+							{
+								Log::error('DataTable new row creation recieved value for a field in an ancillary table that it did not find in the join list: ' . $this->fields[$col]->table);
+								continue;
+							}
+							//first, create new row in other tables for otherwise unresolvable foreign keys
+							//or use existing value if it's already there
+							$otherTableSearchQuery = 'SELECT `' . $referencedUniqueField . '` AS keyVal '
+								. 'FROM `' . $realJoinTableName . '` WHERE `' . $this->fields[$col]->name
+								. '`=?';
+							$searchRes = $db->query($otherTableSearchQuery, [$value], 'searching for reusable value in ancillary table');
+							$setterVal = NULL;
+							if(empty($searchRes))
+							{
+								$otherTableAddQuery = 'INSERT INTO `' . $realJoinTableName
+									. '` SET `' . $this->fields[$col]->name . '`=?';
+								$otRes = $db->query($otherTableAddQuery, [$value], 'adding row to non-main table to satisfy foreign key');
+								if($otRes === false) continue;
+								$setterVal = $db->connection->insert_id;
+							}else{
+								$setterVal = $searchRes[0]['keyVal'];
+							}
+							$setter = '`' . $setterField . '`=' . $setterVal;
+							$setters[] = $setter;
 						}else{
 							$setter = '`' . $colname . '`=';
 							if($value == "")

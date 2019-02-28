@@ -28,7 +28,7 @@ class DataTableField
 	public $nullable     = NULL;
 	public $keyType      = NULL; //PRI, UNI, MUL
 	public $defaultValue = NULL;
-	public $extra        = NULL;
+	public $extra        = NULL; //This is the mysql attribute called "extra" that contains info such as AUTO_INCREMENT
 	public $fkReferencedTable = NULL;
 	public $fkReferencedField = NULL;
 
@@ -155,7 +155,13 @@ class DataTableField
 	{
 		$db = Database::db();
 		$table = [$dt->table];
-		foreach($dt->joinTables as $t) $table[] = $t->joinTable;
+		$tables_alias2real = [$dt->table => $dt->table];
+		foreach($dt->joinTables as $t)
+		{
+			if(isset($tables_alias2real[$t->joinTableAlias])) continue;
+			$tables_alias2real[$t->joinTableAlias] = $t->joinTable;
+			$table[] = $t->joinTableAlias;
+		}
 		
 		//get schema info for all the tables involved and fill it into the field objects
 		//creating field objects with default setup for fields not specified
@@ -163,7 +169,8 @@ class DataTableField
 		$fieldSerial = 1;
 		foreach($table as $tab)
 		{
-			$query = 'SHOW COLUMNS FROM `' . $tab . '`';
+			$real = $tables_alias2real[$tab];
+			$query = 'SHOW COLUMNS FROM `' . $real . '`';
 			$res = $db->query($query, [], 'getting schema info for dataTable ' . $dt->title);
 			if($res === false)
 			{
@@ -197,14 +204,26 @@ class DataTableField
 						$dt->autoCol = $row['Field'];
 				}else{
 					if($row['Key'] == 'PRI')
-						$dt->joinTables[$tab]->pk[] = $row['Field'];
+					{
+						foreach($dt->joinTables as $key => $join)
+						{
+							if($join->joinTable == $tab)
+								$dt->joinTables[$key]->pk[] = $row['Field'];
+						}
+					}
 					if(mb_strpos($row['Extra'],'auto_increment') !== false)
-						$dt->joinTables[$tab]->autoCol = $row['Field'];
+					{
+						foreach($dt->joinTables as $key => $join)
+						{
+							if($join->joinTable == $tab)
+								$dt->joinTables[$key]->autoCol = $row['Field'];
+						}
+					}
 				}
 				//bail on duplicate alias
 				if(isset($dt->alias2fq[$dt->fields[$fieldFQ]->alias]))
 				{
-					Log::error('DataTable ' . $dt->title . ' specified a duplicate alias.');
+					Log::error('DataTable ' . $dt->title . ' specified a duplicate alias: ' . $dt->alias2fq[$dt->fields[$fieldFQ]->alias]);
 					return false;
 				}else{
 					$dt->alias2fq[$dt->fields[$fieldFQ]->alias] = $fieldFQ;
@@ -289,7 +308,7 @@ SQL;
 				}
 			}
 		}
-		
+
 		return true;
 	}
 }

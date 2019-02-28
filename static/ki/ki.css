@@ -437,6 +437,116 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 	right:-25px;
 }
 
+/* Drawer */
+.ki_drawer{               /* the checkbox that tracks state */
+	position:absolute;
+	visibility:hidden;
+	height:0;
+	width:0;
+}
+
+.ki_drawer+label{         /* the covering label */
+	display:none;
+	background-color:rgba(0,0,0,0.2);
+	position:absolute;
+	top:0;
+	left:0;
+	width:100%;
+	height:100%;
+	z-index:100;
+}
+
+.ki_drawer:checked+label{
+	display:block;
+}
+
+.ki_drawer+label+label{   /* the activation button */
+	display:block;
+	width:2em;
+	height:2em;
+	font-weight:bold;
+	background-color:#F0F0F0;
+	user-select: none;
+	text-align:center;
+	line-height:2em;
+}
+
+.ki_drawer+label+label+div{ /* the actual drawer */
+	margin:0;
+	z-index:120;
+	background-color:rgba(255,255,255,0.95);
+	position:fixed;
+	top:0;
+	bottom:0;
+	left:0;
+	max-width:95%;
+	transform:scaleX(0);
+	transform-origin: left bottom;
+	transition:.2s linear;
+	overflow-x:hidden;
+	overflow-y:auto;
+	text-align:left;
+}
+
+.ki_drawer+label+label+div>h1,
+.ki_drawer+label+label+div>h2,
+.ki_drawer+label+label+div>h3,
+.ki_drawer+label+label+div>h4,
+.ki_drawer+label+label+div>h5,
+.ki_drawer+label+label+div>h6{
+	margin-top:0;
+}
+
+.ki_drawer:checked+label+label+div{
+	transform:scaleX(1);
+	transition:.2s ease-out;
+}
+
+.ki_drawer.ki_edge_right+label+label+div{
+	left:initial;
+	right:0;
+	transform-origin: right bottom;
+}
+
+.ki_drawer.ki_edge_bottom+label+label+div{
+	top:initial;
+	right:0;
+	max-width:initial;
+	max-height:95%;
+	overflow-x:hidden;
+	overflow-y:hidden;
+	transform:scaleY(0);
+}
+
+.ki_drawer.ki_edge_bottom:checked+label+label+div,.ki_drawer.ki_edge_top:checked+label+label+div{
+	transform:scaleY(1);
+}
+
+.ki_drawer.ki_edge_top+label+label+div{
+	bottom:initial;
+	right:0;
+	max-width:initial;
+	max-height:95%;
+	overflow-x:hidden;
+	overflow-y:hidden;
+	transform:scaleY(0);
+	transform-origin: left top;
+}
+
+.ki_drawer+label+label+div>label{ /* the close button */
+	display:block;
+	width:2em;
+	height:2em;
+	font-weight:bold;
+	background-color:#F0F0F0;
+	user-select: none;
+	text-align:center;
+	line-height:2em;
+	position:absolute;
+	top:1em;
+	right:1em;
+}
+
 /* Modify third party widgets */
 .ui-multiselect{
 	font-size:12px;

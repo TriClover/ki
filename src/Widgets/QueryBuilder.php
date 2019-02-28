@@ -41,7 +41,7 @@ class QueryBuilder extends Form
 				unset($fields[$key]);
 		
 		$this->fields = Util::arrayClone($fields);
-		$this->title = $title;
+		$this->title = preg_replace('/[^A-Za-z0-9_]/','',$title);
 		$this->inPrefix .= $title;
 		
 		//Create a new state object with default values.

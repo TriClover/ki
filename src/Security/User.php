@@ -27,7 +27,8 @@ class User
 	//Derived fields
 	public $lockedOut;
 	
-	public $permissions = array();
+	public $permissionsById = array();
+	public $permissionsByName = array();
 	
 	function __construct(int    $id,
 	                     string $username,
@@ -57,19 +58,20 @@ class User
 		if($username != 'root')
 		{
 			
-			$perms = $db->query('SELECT `name` FROM `ki_permissions` WHERE `id` IN('
+			$perms = $db->query('SELECT `id`,`name` FROM `ki_permissions` WHERE `id` IN('
 					. 'SELECT `permission` FROM `ki_permissionsOfGroup` WHERE `group` IN('
 					. 'SELECT `group` FROM `ki_groupsOfUser` WHERE `user`=?))',
 					array($id), 'getting permissions of user');
 		}else{
-			$perms = $db->query('SELECT `name` FROM `ki_permissions`',
+			$perms = $db->query('SELECT `id`,`name` FROM `ki_permissions`',
 					array(), 'getting all permissions');
 		}
 		if($perms !== false)
 		{
 			foreach($perms as $row)
 			{
-				$this->permissions[$row['name']] = true;
+				$this->permissionsById[$row['id']] = $row['name'];
+				$this->permissionsByName[$row['name']] = $row['id'];
 			}
 		}
 	}
@@ -226,6 +228,19 @@ class User
 		$filter = 'username != "root"';
 		
 		return new DataTable('userAdmin','ki_users', $userFields, true, true, $filter, 50, true, true, false, false, $callbacks);
+	}
+	
+	/**
+	* @return a DataTable that provides an admin interface for editing groups.
+	*/
+	public static function getGroupAdmin()
+	{
+		$groupFields = [];
+		$groupFields[] = new DataTableField('id',          'ki_groups',      'ID',           true, false, false);
+		$groupFields[] = new DataTableField('name',        'ki_groups',      'Name',         true, true,  true);
+		$groupFields[] = new DataTableField('description', 'ki_groups',      'Description',  true, true,  true);
+		$groupFields[] = new DataTableField('name',        'ki_permissions', 'Permissions:', true, true,  true, [], NULL, 200, true);
+		return new DataTable('groupAdmin', 'ki_groups', $groupFields, true, true, '', 100);
 	}
 }
 ?>

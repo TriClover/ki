@@ -14,6 +14,7 @@ class DataTableJoin
 	public $mainTableFKField;
 	public $joinTable;
 	public $joinTableReferencedUniqueField;
+	public $joinTableAlias;
 	
 	//schema info assigned later by DataTable
 	public $pk = array();   //fields that are in the primary key
@@ -29,12 +30,14 @@ class DataTableJoin
 	function __construct(string $mainTable,
 	                     string $mainTableFKField,
 	                     string $joinTable,
-	                     string $joinTableReferencedUniqueField)
+	                     string $joinTableReferencedUniqueField,
+						 string $joinTableAlias = '')
 	{
 		$this->mainTable                      = $mainTable;
 		$this->mainTableFKField               = $mainTableFKField;
 		$this->joinTable                      = $joinTable;
 		$this->joinTableReferencedUniqueField = $joinTableReferencedUniqueField;
+		$this->joinTableAlias                 = ($joinTableAlias == '') ? $joinTable : $joinTableAlias;
 	}
 	
 	/**
@@ -84,8 +87,19 @@ QUERY;
 		$purpose = 'finding fields for ON clause of "' . $mainTable . ' LEFT JOIN ' . $joinTable . '"';
 		$res = $db->query($query, $params, $purpose);
 		if(empty($res)) return false;
-		$res = $res[0];
-		return new DataTableJoin($mainTable, $res['COLUMN_NAME'], $joinTable, $res['REFERENCED_COLUMN_NAME']);
+		$out = [];
+		if(count($res) == 1)
+		{
+			$row = $res[0];
+			$out[] = new DataTableJoin($mainTable, $row['COLUMN_NAME'], $joinTable, $row['REFERENCED_COLUMN_NAME']);
+		}else{
+			foreach($res as $index => $row)
+			{
+				$alias = $joinTable . '_' . $row['COLUMN_NAME'];
+				$out[] = new DataTableJoin($mainTable, $row['COLUMN_NAME'], $joinTable, $row['REFERENCED_COLUMN_NAME'], $alias);
+			}
+		}
+		return $out;
 	}
 	
 	/**
@@ -104,7 +118,7 @@ QUERY;
 			{
 				Log::error('No DataTable-usable key arrangement found for ' . $mainTable . ' LEFT JOIN ' . $jt);
 			}else{
-				$ret[$jt] = $join;
+				$ret = array_merge($ret, $join);
 			}
 		}
 		return $ret;
@@ -115,9 +129,9 @@ QUERY;
 	*/
 	function joinSql()
 	{
-		return 'LEFT JOIN `' . $this->joinTable
+		return 'LEFT JOIN `' . $this->joinTable . '` AS `' . $this->joinTableAlias
 			. '` ON `' . $this->mainTable . '`.`' . $this->mainTableFKField . '`=`'
-			. $this->joinTable . '`.`' . $this->joinTableReferencedUniqueField . '`';
+			. $this->joinTableAlias . '`.`' . $this->joinTableReferencedUniqueField . '`';
 	}
 }
 

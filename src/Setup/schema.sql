@@ -128,21 +128,18 @@ CREATE TABLE `ki_savableForms` (
 CREATE TABLE `ki_savedFormCategories` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(127) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `form` int(11) NOT NULL COMMENT 'The form that this category will apply to.',
   `description` text COLLATE utf8mb4_unicode_ci,
   `permission_view` int(11) NOT NULL COMMENT 'Reference to the permission allowing viewing of the reports in this category.',
   `permission_edit` int(11) NOT NULL COMMENT 'Reference to the permission allowing (viewing,editing) of the reports in this category.',
   `permission_addDel` int(11) NOT NULL COMMENT 'Reference to the permission allowing (viewing,editing,adding,deleting) of the reports in this category.',
   PRIMARY KEY (`id`),
-  KEY `fk_formcat_form_forms_id_idx` (`form`),
   KEY `fk_formcat_permView_idx` (`permission_view`),
   KEY `fk_formcat_permEdit_idx` (`permission_edit`),
   KEY `fk_formcat_permAddDel_idx` (`permission_addDel`),
-  CONSTRAINT `fk_formcat_form_forms_id` FOREIGN KEY (`form`) REFERENCES `ki_savableForms` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_formcat_permAddDel` FOREIGN KEY (`permission_addDel`) REFERENCES `ki_permissions` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_formcat_permEdit` FOREIGN KEY (`permission_edit`) REFERENCES `ki_permissions` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_formcat_permView` FOREIGN KEY (`permission_view`) REFERENCES `ki_permissions` (`id`) ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_savedFormData` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
