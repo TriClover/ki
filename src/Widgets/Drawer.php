@@ -11,23 +11,35 @@ class Drawer extends Widget
 	protected $contents  = '';
 	protected $edge      = Drawer::EDGE_LEFT;
 	protected $styles    = array();
+	protected $buttonText= '';
+	protected $open      = false;
 	
 	public const EDGE_TOP    = 0;
 	public const EDGE_RIGHT  = 1;
 	public const EDGE_BOTTOM = 2;
 	public const EDGE_LEFT   = 3;
 	
+	public const DEFAULT_BUTTON = '<b>☰</b>';
+	
 	/**
 	* @param name Name to distinguish multiple widgets on one page.
 	* @param contents HTML that goes in the drawer
 	* @param edge Which edge of the screen the drawer should be attached to
+	* @param buttonText the text to show on the activation button
 	*/
-	function __construct(string $name, string $contents, int $edge = Drawer::EDGE_LEFT, array $styles = array())
+	function __construct(string $name,
+	                     string $contents,
+						 int    $edge = Drawer::EDGE_LEFT,
+						 string $buttonText = Drawer::DEFAULT_BUTTON,
+						 bool   $open = false,
+						 array  $styles = [])
 	{
-		$this->name     = htmlspecialchars($name);
-		$this->contents = $contents;
-		$this->edge     = $edge;
-		$this->styles   = $styles;
+		$this->name       = htmlspecialchars($name);
+		$this->contents   = $contents;
+		$this->edge       = $edge;
+		$this->styles     = $styles;
+		$this->buttonText = empty($buttonText) ? Drawer::DEFAULT_BUTTON : $buttonText;
+		$this->open       = $open;
 	}
 
 	protected function getHTMLInternal()
@@ -35,9 +47,9 @@ class Drawer extends Widget
 		$allowedStylesMain = array('border','background','background-color','background-image','background-repeat','background-attachment','background-position');
 		$mainStyles = Widget::filterStyles($this->styles, $allowedStylesMain);
 		$out = '<input type="checkbox" id="' . $this->name . '" class="ki_drawer '
-			. Drawer::edgeToCss($this->edge) . '"/>';
+			. Drawer::edgeToCss($this->edge) . '"' . ($this->open ? ' checked' : '') . '/>';
 		$out .= '<label for="' . $this->name . '"></label>';
-		$out .= '<label for="' . $this->name . '">☰</label>';
+		$out .= '<label for="' . $this->name . '">' . $this->buttonText . '</label>';
 		$out .= '<div style="' . $mainStyles . '"><label for="' . $this->name . '">❌</label>'
 			. $this->contents . '</div>';
 		return $out;

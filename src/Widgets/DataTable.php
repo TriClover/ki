@@ -145,6 +145,9 @@ class DataTable extends Form
 		$this->allow_show = false;
 		foreach($this->fields as $fname => $field)
 		{
+			//Pure expression fields
+			if($field->table == '') continue;
+			
 			if($field->dataType === NULL || ($field->dataType == 'virtual' && $field->manyToMany === false))
 			{
 				unset($this->fields[$fname]);
@@ -614,6 +617,10 @@ class DataTable extends Form
     WHERE $relationTableMainFKField=$mainTablePKField
 ) AS $alias 
 END_SQL;
+				}
+				elseif($field->$table == '')
+				{
+					$fields[] = $field->fqName(false) . ' AS "' . $field->alias . '"';
 				}
 			}else{
 				$fields[] = $field->fqName(true) . ' AS "' . $field->alias . '"';
@@ -1190,7 +1197,7 @@ END_SQL;
 							$setters[] = $setter;
 						}else{
 							$setter = '`' . $colname . '`=';
-							if($value == "")
+							if($value === NULL)
 							{
 								$setter .= 'NULL';
 							}else{

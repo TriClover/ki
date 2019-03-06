@@ -24,6 +24,7 @@ class FormSaver extends Form
 	//state
 	protected $setupOK = true;
 	protected $outputFormData = ''; //form data to output, may be loaded from DB or regurgitated
+	protected $dataTablesDidSomething = false;
 	
 	//sub objects
 	protected $dtSaver;    //DataTable showing the saved form configurations in the user's private stash
@@ -174,8 +175,8 @@ class FormSaver extends Form
 		$reportList .= '<script>$(function(){' . $this->deserializer . '("' . $this->formName
 			. '","' . $this->outputFormData . '");});</script></div>';
 		
-		$drawer = new Drawer($drawerName, $reportList, Drawer::EDGE_RIGHT);
-		$out = '<fieldset style="float:right;text-align:center;padding-left:2em;"><legend>Reports</legend>'
+		$drawer = new Drawer($drawerName, $reportList, Drawer::EDGE_RIGHT, '☰ Reports', $this->dataTablesDidSomething);
+		$out = '<fieldset style="float:left;text-align:center;">'
 			. $drawer->getHTML()
 			. '</fieldset>';
 		
@@ -200,8 +201,17 @@ class FormSaver extends Form
 		if(isset($post[$re_input])) $this->outputFormData = $post[$re_input];
 		
 		//process datatable new/edit/delete/load
-		$this->dtSaver->handleParams($post, $get);
-		foreach($this->categorySavers as $saver) $saver->handleParams($post, $get);
+		if($this->dtSaver->handleParams($post, $get))
+		{
+			$this->dataTablesDidSomething = true;
+		}
+		foreach($this->categorySavers as $saver)
+		{
+			if($saver->handleParams($post, $get))
+			{
+				$this->dataTablesDidSomething = true;
+			}
+		}
 
 		return $this->outputFormData;
 	}

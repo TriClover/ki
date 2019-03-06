@@ -46,9 +46,10 @@ class DataTableField
 	* and the options for this field that come from the DataTable.
 	* It does not fill the schema related information.
 	* @param name          The column name in the schema (as string).
-	*                       If NULL, use these settings for fields not specified.
+	*                       This could also be an expression not tied to an actual column if Table is the empty string.
+	*                       If name is NULL, use these settings for fields not specified.
 	* @param table         The table name in the schema where this field resides.
-	*                       Must be a table specified in the DataTable unless the manyToMany parameter is true (see below)
+	*                       Must be a table specified in the DataTable (or empty) unless the manyToMany parameter is true (see below)
 	* @param alias         Used for display, and as the alias in any queries. NULL = $table.$name
 	* @param show          Whether a DataTable will show this column
 	*                       true  = show
@@ -103,6 +104,9 @@ class DataTableField
 	
 	function fqName(bool $quoted = false)
 	{
+		if($this->table == '') return $this->name; //pure expression "fields"
+		
+		//normal fields
 		$q = $quoted ? '`' : '';
 		return $q . $this->table . $q . '.' . $q . $this->name . $q;
 	}
@@ -302,6 +306,12 @@ SQL;
 				//don't process fields that are missing just because they weren't in the table
 				if($field->manyToMany !== false)
 				{
+					$row = ['Field' => $field->name, 'Type' => 'virtual', 'Null' => 'YES', 'Key' => '', 'Default' => NULL, 'Extra' => ''];
+					$dt->fields[$fieldFQ]->fillSchemaInfo($dt, $row);
+					$dt->alias2fq[$dt->fields[$fieldFQ]->alias] = $fieldFQ;
+				}elseif($field->table == ''){
+					$field->edit = false;
+					$field->add = false;
 					$row = ['Field' => $field->name, 'Type' => 'virtual', 'Null' => 'YES', 'Key' => '', 'Default' => NULL, 'Extra' => ''];
 					$dt->fields[$fieldFQ]->fillSchemaInfo($dt, $row);
 					$dt->alias2fq[$dt->fields[$fieldFQ]->alias] = $fieldFQ;

@@ -229,11 +229,15 @@ body{
 	transition: visibility 0.5s;
 }
 .ki_menu div {
-	padding: 5px;
+	padding-top:0;
+	padding-bottom:0;
 	background-color: #DDD;
 	white-space:nowrap;
 	color:#000;
 	font-size:16px;
+	line-height:16px;
+	text-align:center;
+	user-select:none;
 }
 .ki_menu div span:first-child{
 	color:#FFF;
@@ -246,7 +250,7 @@ body{
 	width: auto;
 	margin-top: 0;
 	margin-left: 0;
-	padding: 5px;
+	padding: 0;
 }
 .ki_menu li {
 	color: #000;
@@ -255,25 +259,23 @@ body{
 	text-align:center;
 	margin:0;
 }
-.ki_menu a, .ki_menu input[type=submit]{
+.ki_menu>ul>li>a,.ki_menu>ul>li>span, .ki_menu input[type=submit].button2text{
 	text-decoration:none;
 	color:#000;
 	font-family:Arial, Helvetica, sans-serif;
 	font-size:12px;
-	padding:5px;
-	border-radius:5px;
+	padding:15px;
 	display:inline-block;
 	margin:0;
 }
-.ki_menu a {
+.ki_menu>ul>li>a {
 	width:calc(100% - 10px);
-	height:15px;
 }
-.ki_menu input[type=submit] {
+.ki_menu input[type=submit].button2text {
 	width:100%;
 	height:25px;
 }
-.ki_menu a:hover, .ki_menu input[type=submit]:hover{
+.ki_menu>ul>li>a:hover,.ki_menu>ul>li>span:hover, .ki_menu input[type=submit].button2text:hover{
 	background-color:#DDD;
 }
 
@@ -448,7 +450,7 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 .ki_drawer+label{         /* the covering label */
 	display:none;
 	background-color:rgba(0,0,0,0.2);
-	position:absolute;
+	position:fixed;
 	top:0;
 	left:0;
 	width:100%;
@@ -461,14 +463,15 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 }
 
 .ki_drawer+label+label{   /* the activation button */
-	display:block;
-	width:2em;
+	display:inline-block;
 	height:2em;
-	font-weight:bold;
+	padding-left:0.55em;
+	padding-right:0.55em;
 	background-color:#F0F0F0;
 	user-select: none;
 	text-align:center;
 	line-height:2em;
+	cursor:pointer;
 }
 
 .ki_drawer+label+label+div{ /* the actual drawer */
@@ -545,6 +548,7 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 	position:absolute;
 	top:1em;
 	right:1em;
+	cursor:pointer;
 }
 
 /* Modify third party widgets */

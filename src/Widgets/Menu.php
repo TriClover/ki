@@ -3,28 +3,32 @@ namespace mls\ki\Widgets;
 
 class Menu extends Widget
 {
-	protected $button = '';
-	protected $items  = array();
-	protected $styles = array();
+	protected $button    = '';
+	protected $items     = array();
+	protected $styles    = array();
+	protected $showArrow = true;
 	
-	function __construct(string $button, array $items, array $styles = array())
+	function __construct(string $button, array $items, array $styles = array(), bool $showArrow = true)
 	{
-		$this->button = $button;
-		$this->items  = $items;
-		$this->styles = $styles;
+		$this->button    = $button;
+		$this->items     = $items;
+		$this->styles    = $styles;
+		$this->showArrow = $showArrow;
 	}
 	
 	protected function getHTMLInternal()
 	{
-		$allowedStylesMain = array('float', 'width');
-		$allowedStylesButton = array('height');
+		$allowedStylesMain = array('float');
+		$allowedStylesButton = array('height', 'width', 'font-size', 'line-height');
 		$mainStyles = Widget::filterStyles($this->styles, $allowedStylesMain);
 		$buttonStyles = Widget::filterStyles($this->styles, $allowedStylesButton);
 		
 		$fromRight = mb_strpos('float:right;',$mainStyles) !== false;
 
 		$out = '<div tabindex="0" class="ki_menu" style="' . $mainStyles . '">'
-			. '<div style="' . $buttonStyles . '"><span>▼</span>' . $this->button . ' </div><ul style="'
+			. '<div style="' . $buttonStyles . '">'
+			. ($this->showArrow ? '<span>▼</span>' : '')
+			. $this->button . ' </div><ul style="'
 			. ($fromRight ? 'right:0;' : '') . '">';
 		foreach($this->items as $item)
 		{
@@ -32,7 +36,10 @@ class Menu extends Widget
 			$out .= '<li>';
 			if(!is_array($item->postdata))
 			{
-				$out .= '<a href="' . $item->url . '">' . $item->title . '</a>';
+				if(empty($item->url))
+					$out .= '<span>' . $item->title . '</span>';
+				else
+					$out .= '<a href="' . $item->url . '">' . $item->title . '</a>';
 			}else{
 				$out .= '<form action="' . $item->url . '" method="post">';
 				foreach($item->postdata as $key => $value)

@@ -18,13 +18,21 @@ class LoginForm extends Form
 	protected $dataTable_register;
 	protected $pwForm;
 	
+	//Location of editing pages
+	protected $profilePath;
+	protected $sessionPath;
+	
 	/**
 	* Sets up the constituent form objects for their separate handling.
+	* @param profilePath Used for "Edit Profile" link. Explicity set blank to remove the link.
+	* @param sessionPath Used for "Sessions" link. Explicity set blank to remove the link.
 	*/
-	function __construct()
+	function __construct($profilePath = 'profile.php', $sessionPath = 'sessions.php')
 	{
 		$this->dataTable_register = LoginForm::getDataTable_register();
 		$this->pwForm = new PasswordResetForm();
+		$this->profilePath = $profilePath;
+		$this->sessionPath = $sessionPath;
 	}
 	
 	/**
@@ -81,15 +89,39 @@ class LoginForm extends Form
 			$out .= $tabber;
 		}else{
 			$items = array();
-			$items[] = new MenuItem('Logout', $_SERVER['SCRIPT_NAME'], array('logout' => '1'));
-			$menuButton = '👤 ' . $user->username . '<br/>';
-			$userMenu = new Menu($menuButton, $items, array('float'=>'right', 'height'=>'34px'));
+			$items[] = new MenuItem($this->getAuthMgmtContents(), '');
+			$menuButton = '👤';
+			$buttonStyles = array('float'      => 'right',
+			                      'height'     => '44px',
+								  'width'      => '44px',
+								  'font-size'  => '25px',
+								  'line-height'=> '44px');
+			$userMenu = new Menu($menuButton, $items, $buttonStyles, false);
 			$out .= $userMenu->getHTML();
 		}
 		$sys = $outputSpanOpen . implode(', ', $request->systemMessages) . '</span>';
 		$out .= $sys;
 
 		return $out;
+	}
+	
+	protected function getAuthMgmtContents()
+	{
+		$user = Authenticator::$user;
+		
+		$actions = [];
+		if(!empty($this->profilePath))
+			$actions[] = '<a href="' . $this->profilePath . '">Edit Profile</a>';
+		if(!empty($this->sessionPath))
+			$actions[] = '<a href="' . $this->sessionPath . '">Sessions</a>';
+		$actions[] = '<form method="post" style="display:inline;"><input type="hidden" name="logout" value="1"/>'
+			. '<input type="submit" value="Logout" style="display:inline;"/></form>';
+		
+		$dContents = '';
+		$dContents .= '<h1 style="margin-top:0;">' . $user->username . '</h1>';
+		$dContents .= implode(' &nbsp; - &nbsp; ', $actions);
+		
+		return $dContents;
 	}
 	
 	/**
@@ -103,7 +135,7 @@ class LoginForm extends Form
 			$site = Config::get()['general']['sitename'];
 			
 			//Checks for which the error can be shown on-page instead of via email because there is no security implication
-			if($row['password_hash'] != $_POST['confirmRegPassword'])
+			if($row['ki_users.password_hash'] != $_POST['confirmRegPassword'])
 			{
 				return 'Password and confirmation did not match.';
 			}
@@ -112,14 +144,14 @@ class LoginForm extends Form
 			$mail = new PHPMailer;
 			$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
 			$mail->FromName = $site . ' Account Management';
-			$mail->addAddress($row['email']);
+			$mail->addAddress($row['ki_users.email']);
 			
 			//turn the password into a hash before storing
-			$row['password_hash'] = \password_hash($row['password_hash'], PASSWORD_BCRYPT);
+			$row['ki_users.password_hash'] = \password_hash($row['ki_users.password_hash'], PASSWORD_BCRYPT);
 
 			//check for duplicate email: instead of letting the dataTable show duplicate error on mail field, abort.
 			$resMail = $db->query('SELECT `id`,`email_verified` FROM `ki_users` WHERE `email`=? LIMIT 1',
-				array($row['email']), 'Checking for duplicate email');
+				array($row['ki_users.email']), 'Checking for duplicate email');
 			if($resMail === false) return Authenticator::msg_databaseError;
 			if(!empty($resMail))
 			{
@@ -137,12 +169,12 @@ class LoginForm extends Form
 			
 			//check for duplicate username with same goals as above check for dup. email
 			$resUname = $db->query('SELECT `id` FROM `ki_users` WHERE `username`=? LIMIT 1',
-				array($row['username']), 'checking for duplicate username');
+				array($row['ki_users.username']), 'checking for duplicate username');
 			if($resUname === false) return Authenticator::msg_databaseError;
 			if(!empty($resUname))
 			{
 				$mail->Subject = $site . ' Account Creation';
-				$mail->Body = 'You tried to register an account with the username "' . $row['username']
+				$mail->Body = 'You tried to register an account with the username "' . $row['ki_users.username']
 					. '", but that name is already taken. Please try another.';
 				Mail::send($mail);
 				return Authenticator::msg_AccountReg;
@@ -185,11 +217,7 @@ class LoginForm extends Form
 			return $text;
 		};
 		
-		$config = \mls\ki\Config::get()['policies'];
-		
-		$passwordConstraints = array('pattern' => $config['passwordRegex'],
-									 'title' => $config['passwordRegexDescription'],
-									 'type' => 'password');
+		$passwordConstraints = LoginForm::getPasswordInputConstraints();
 		
 		$fields = array();
 		$fields[] = new DataTableField('id',            'ki_users', 'Register', false, false, false);
@@ -201,6 +229,137 @@ class LoginForm extends Form
 		$fields[] = new DataTableField('last_active',   'ki_users', NULL, false, false, false);
 		$events = new DataTableEventCallbacks($reg_onAdd, NULL, NULL, $reg_beforeAdd, NULL, NULL);
 		return new DataTable('register', 'ki_users', $fields, true, false, false, 0, false, false, false, false, $events);
+	}
+	
+	public static function getPasswordEditor()
+	{
+		$user = Authenticator::$user;
+		$passwordConstraints = LoginForm::getPasswordInputConstraints();
+		
+		$formatPassField = function($text, $action)
+		{
+			if($action == 'edit')
+			{
+				$text = preg_replace('/input value=.* name/', 'input value="" id="editPassword" name', $text);
+				$text = '<span id="passwordGroup"><input type="password" id="oldPassword" name="oldPassword" placeholder="Old Password"/>' . $text . ' <input type="password" name="confirmEditPassword" id="confirmEditPassword" placeholder="Confirm New Password" style="margin-left:6px;"/></span>';
+				$text .= '<script>
+					$("#passwordGroup").closest("form").submit(function(event)
+					{
+						if($("#confirmEditPassword").val() != $("#editPassword").val())
+						{
+							alert("Password and confirmation must match.");
+							return false;
+						}
+					});</script>';
+			}
+			return $text;
+		};
+		
+		$beforeEdit = function(&$row)
+		{
+			$db = Database::db();
+			$user = Authenticator::$user;
+			
+			if($row['ki_users.password_hash'] != $_POST['confirmEditPassword'])
+			{
+				return 'Password and confirmation did not match.';
+			}
+			
+			if(!\password_verify($_POST['oldPassword'], $user->password_hash))
+			{
+				return 'Incorrect Old Password.';
+			}
+			
+
+
+			//turn the password into a hash before storing
+			$row['ki_users.password_hash'] = \password_hash($row['ki_users.password_hash'], PASSWORD_BCRYPT);
+
+			return true;
+		};
+		
+		$events = new DataTableEventCallbacks(NULL, NULL, NULL, NULL, $beforeEdit, NULL);
+		
+		$fields = [];
+		$fields[] = new DataTableField('password_hash', 'ki_users','Change Password', true, true, false,$passwordConstraints,$formatPassField,1,false);
+		$fields[] = new DataTableField(NULL,'ki_users','',false,false,false,[],NULL,1,false);
+		$filter = '`id`=' . $user->id;
+		$dt = new DataTable('profilePassword','ki_users',$fields,false,false,$filter,1,false,false,false,false,$events,NULL);
+		return $dt;
+	}
+	
+	public static function getEmailEditor()
+	{
+		$user = Authenticator::$user;
+		
+		/*todo: new email address should require verification
+		This can't be done until after support for multiple email addresses.
+		If done now, might run into the situation where they type it wrong so it
+		can't be verified, but now they can't login because their email isn't verified.
+		With multiple, they can continue to use the old one until their new email is verified.
+		*/
+		
+		$fields = [];
+		$fields[] = new DataTableField('email', 'ki_users','Change Email', true,true, false,['type'=>'email'], NULL, 1,false);
+		$fields[] = new DataTableField(NULL,'ki_users','',false,false,false,[],NULL,1,false);
+		$filter = '`id`=' . $user->id;
+		$dt = new DataTable('profileEmail','ki_users',$fields,false,false,$filter,1,false,false,false,false,NULL,NULL);
+		return $dt;
+	}
+	
+	public static function getPasswordInputConstraints()
+	{
+		$config = \mls\ki\Config::get()['policies'];
+		$passwordConstraints = array('pattern' => $config['passwordRegex'],
+							 'title' => $config['passwordRegexDescription'],
+							 'type' => 'password',
+							 'placeholder' => 'New Password');
+		return $passwordConstraints;
+	}
+	
+	public static function getSessionEditor()
+	{
+		$user = Authenticator::$user;
+		$config = Config::get()['sessions'];
+		$absolute_seconds = $config['remembered_timeout_absolute_hours'] * 60 * 60;
+		$absolute_seconds_temp = $config['temp_timeout_absolute_hours'] * 60 * 60;
+		$idle_seconds = $config['remembered_timeout_idle_minutes'] * 60;
+		$idle_seconds_temp = $config['temp_timeout_idle_minutes'] * 60;
+		$now = time();
+		$earliestValidEstablished     = $now - $absolute_seconds;
+		$earliestValidEstablishedTemp = $now - $absolute_seconds_temp;
+		$earliestValidLastActive      = $now - $idle_seconds;
+		$earliestValidLastActiveTemp  = $now - $idle_seconds_temp;
+		$timeClause = '(`remember`=1 AND UNIX_TIMESTAMP(`established`)>'.$earliestValidEstablished.' AND UNIX_TIMESTAMP(`last_active`)>'.$earliestValidLastActive.')'
+			. ' OR (`remember`=0 AND UNIX_TIMESTAMP(`established`)>'.$earliestValidEstablishedTemp.' AND UNIX_TIMESTAMP(`last_active`)>'.$earliestValidLastActiveTemp.')';
+		
+		$formatLongField = function($text, $action)
+		{
+			if($action == 'show')
+			{
+				$current = false;
+				if(trim($text) == Authenticator::$session->id_hash) $current = true;
+				$text = '<div style="font-size:75%;width:15em;word-wrap:break-word;">' . $text;
+				if($current) $text .= '<br/>(Current session)';
+				$text .= '</div>';
+			}
+			return $text;
+		};
+		
+		$fields = [];
+		$fields[] = new DataTableField('id_hash',        'ki_sessions','Hashed ID',      true, false,false,[], $formatLongField, 1,false);
+		$fields[] = new DataTableField('user',           'ki_sessions','User ID',        false,false,false,[], NULL, 1,false);
+		$fields[] = new DataTableField('ip',             'ki_sessions','IP id',          false,false,false,[], NULL, 1,false);
+		$fields[] = new DataTableField('INET6_NTOA(`ki_IPs`.`ip`)','', 'Address',        true, false,false,[], NULL, 1,false);
+		$fields[] = new DataTableField('fingerprint',    'ki_sessions','Fingerprint',    true, false,false,[], $formatLongField, 1,false);
+		$fields[] = new DataTableField('established',    'ki_sessions','Established',    true, false,false,[], NULL, 1,false);
+		$fields[] = new DataTableField('last_active',    'ki_sessions','Last Active',    true, false,false,[], NULL, 1,false);
+		$fields[] = new DataTableField('remember',       'ki_sessions','Remember?',      true, false,false,[], NULL, 1,false);
+		$fields[] = new DataTableField('last_id_reissue','ki_sessions','Last ID Reissue',true, false,false,[], NULL, 1,false);
+		$fields[] = new DataTableField(NULL,'ki_sessions','',false,false,false,[],NULL,1,false);
+		$filter = '`user`=' . $user->id . ' AND (' . $timeClause . ')';
+		$dt = new DataTable('sessions',['ki_sessions','ki_IPs'],$fields,false,true,$filter,100,false,false,false,false,NULL,NULL);
+		return $dt;
 	}
 }
 
