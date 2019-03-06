@@ -17,6 +17,7 @@ class LoginForm extends Form
 {
 	protected $dataTable_register;
 	protected $pwForm;
+	protected $showRegister;
 	
 	//Location of editing pages
 	protected $profilePath;
@@ -27,12 +28,15 @@ class LoginForm extends Form
 	* @param profilePath Used for "Edit Profile" link. Explicity set blank to remove the link.
 	* @param sessionPath Used for "Sessions" link. Explicity set blank to remove the link.
 	*/
-	function __construct($profilePath = 'profile.php', $sessionPath = 'sessions.php')
+	function __construct(string $profilePath = 'profile.php',
+	                     string $sessionPath = 'sessions.php',
+	                     bool   $showRegister= true)
 	{
 		$this->dataTable_register = LoginForm::getDataTable_register();
 		$this->pwForm = new PasswordResetForm();
-		$this->profilePath = $profilePath;
-		$this->sessionPath = $sessionPath;
+		$this->profilePath  = $profilePath;
+		$this->sessionPath  = $sessionPath;
+		$this->showRegister = $showRegister;
 	}
 	
 	/**
@@ -81,7 +85,8 @@ class LoginForm extends Form
 				. '<input type="submit" name="login" id="login" value="Login"/>'
 				. '</form>';
 			$resetForm = str_replace('.php', '.php#auth_ForgotUsernamePassword', $this->pwForm->getHTML());
-			$tabs = array('Login'=>$coreLogin, 'Register'=>$regForm, 'Forgot Username/Password?' => $resetForm);
+			$tabs = array('Login'=>$coreLogin, 'Forgot Username/Password?' => $resetForm);
+			if($this->showRegister) $tabs['Register'] = $regForm;
 			$tabberHeight = '52px';
 			
 			$tabberObj = new TargetTabber('auth', $tabs, array('width'=>'350px', 'height'=>'auto'));
