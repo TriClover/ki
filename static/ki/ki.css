@@ -551,6 +551,21 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 	cursor:pointer;
 }
 
+/* SelectCycler */
+.selectCycler{
+	height:12px;
+	min-width:12px;
+	background-color:#EEE;
+	border:1px #888 solid;
+	border-radius:2px;
+	text-align:center;
+	display:inline-block;
+	margin:1px 1px 4px 1px;
+	vertical-align:middle;
+	font-size:12px;
+	line-height:12px;
+}
+
 /* Modify third party widgets */
 .ui-multiselect{
 	font-size:12px;

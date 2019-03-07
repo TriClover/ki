@@ -78,3 +78,49 @@ function ki_setEditVisibility(btn, inputValues)
 	}
 	btn.css("z-index","5");
 }
+$(function(){
+	$('.ki_sorter select').selectCycle();
+});
+
+//SelectCycle
+//Call .selectCycle() on a jquery tag object of a <select> to turn it into a cycler
+(function( $ )
+{
+	$.fn.selectCycle = function()
+	{
+		this.filter( "select" ).each(function()
+		{
+			var sel = $( this );
+			sel.css('visibility', 'hidden');
+			sel.css('position', 'absolute');
+			var cycler = '<div class="selectCycler" onclick="ki_cycleSelect(this);"></div>'
+			sel.after(cycler);
+			ki_updateSelectCycler(sel.next());
+		});
+        return this;
+	};
+}( jQuery ));
+
+function ki_cycleSelect(cyc)
+{
+	var jCyc = $(cyc);
+	var sel = jCyc.prev();
+	var options = sel.children();
+	var selectedOption = options.filter('option:selected');
+	selectedOption.prop('selected', false);
+	if(selectedOption == options.last())
+	{
+		options.first.prop('selected', true);
+	}else{
+		selectedOption.next().prop('selected', true);
+	}
+	ki_updateSelectCycler(jCyc);
+}
+
+function ki_updateSelectCycler(cyc)
+{
+	var sel = cyc.prev();
+	var options = sel.children();
+	var selectedOption = options.filter('option:selected');
+	cyc.text(selectedOption.text());
+}
