@@ -618,7 +618,7 @@ class DataTable extends Form
 ) AS $alias 
 END_SQL;
 				}
-				elseif($field->$table == '')
+				elseif($field->table == '')
 				{
 					$fields[] = $field->fqName(false) . ' AS "' . $field->alias . '"';
 				}

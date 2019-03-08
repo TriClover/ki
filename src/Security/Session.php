@@ -184,21 +184,29 @@ class Session
 		if($sessionData === false) return false;
 		if(empty($sessionData)) return NULL;
 		$sessionData = $sessionData[0];
-		$expiry = Session::calculateExpiryTime($sessionData['established'], $sessionData['remember'], $sessionData['last_active']);
-		$sidExpired = time() >= $expiry;
+		$expiryIdle     = Session::calculateIdleExpiryTime($sessionData['established'], $sessionData['remember'], $sessionData['last_active']);
+		$expiryAbsolute = Session::calculateAbsoluteExpiryTime($sessionData['established'], $sessionData['remember']);
+		$expiry         = Session::calculateExpiryTime($sessionData['established'], $sessionData['remember'], $sessionData['last_active']);
+		$sidExpiredIdle = time() >= $expiryIdle;
+		$sidExpiredAbsolute = time() >= $expiryAbsolute;
+		$sidExpired = $sidExpiredIdle || $sidExpiredAbsolute;
 		$deleteThisSession = false;
 		if($sessionData['user'] === NULL)
 		{
-			$sidExpired = false; //anonymous sessions don't expire
+			//anonymous sessions don't expire
+			$sidExpiredIdle = false;
+			$sidExpiredAbsolute = false;
 		}else{
 			//check if anything about the user prevents the session from being good
 			$user = User::loadFromId($sessionData['user']);
-			if(!$user->enabled || $user->lockedOut) $deleteThisSession = true;
+			if($user->lockedOut) $deleteThisSession = 'user_lockout';
+			if(!$user->enabled) $deleteThisSession = 'user_disabled';
 		}
-		if($sidExpired) $deleteThisSession = true;
-		if($deleteThisSession)
+		if($sidExpiredIdle) $deleteThisSession = 'expired_idle';
+		if($sidExpiredAbsolute) $deleteThisSession = 'expired_absolute';
+		if($deleteThisSession !== false)
 		{
-			Session::deleteSession($sidHash);
+			Session::deleteSession($sidHash, $deleteThisSession);
 			return false;
 		}
 		$reissueTimestamp = Session::calculateReissueTime($sessionData['last_id_reissue']);
@@ -256,17 +264,49 @@ class Session
 	public static function calculateExpiryTime(int $established, bool $remember, int $last_active = NULL)
 	{
 		if($last_active === NULL) $last_active = time();
+		$idle     = Session::calculateIdleExpiryTime($established, $remember, $last_active);
+		$absolute = Session::calculateAbsoluteExpiryTime($established, $remember);
+		return min($idle, $absolute);
+	}
+	
+	/**
+	* Calculates when a session will expire from inactivity, assuming no more activity.
+	*
+	* @param established timestamp for beginning of session
+	* @param remember whether the session has Remember enabled
+	* @param last_active timestamp from which to calculate idle timeout. Leave NULL to use the current time; eg. when starting or refreshing a session. Specify a time to check whether an old session has expired or not without refreshing it.
+	* @return timestamp for when the session should expire
+	*/
+	public static function calculateIdleExpiryTime(int $established, bool $remember, int $last_active = NULL)
+	{
+		if($last_active === NULL) $last_active = time();
 		$config = Config::get()['sessions'];
 		$idle_seconds = $config['remembered_timeout_idle_minutes'] * 60;
-		$absolute_seconds = $config['remembered_timeout_absolute_hours'] * 60 * 60;
 		if(!$remember)
 		{
 			$idle_seconds = $config['temp_timeout_idle_minutes'] * 60;
-			$absolute_seconds = $config['temp_timeout_absolute_hours'] * 60 * 60;
 		}
 		$idle = $last_active + $idle_seconds;
+		return $idle;
+	}
+	
+	/**
+	* Calculates when a session will expire, based on absolute timeout from its creation.
+	*
+	* @param established timestamp for beginning of session
+	* @param remember whether the session has Remember enabled
+	* @return timestamp for when the session should expire
+	*/
+	public static function calculateAbsoluteExpiryTime(int $established, bool $remember)
+	{
+		$config = Config::get()['sessions'];
+		$absolute_seconds = $config['remembered_timeout_absolute_hours'] * 60 * 60;
+		if(!$remember)
+		{
+			$absolute_seconds = $config['temp_timeout_absolute_hours'] * 60 * 60;
+		}
 		$absolute = $established + $absolute_seconds;
-		return min($idle, $absolute);
+		return $absolute;
 	}
 	
 	/**
@@ -304,10 +344,21 @@ class Session
 	/**
 	* Deletes a session from the DB
 	* @param sidHash the sid_hash to look for
+	* @param fate the reason for session deletion, possible values of enum ki_sessionsArchive.fate
 	*/
-	public static function deleteSession(string $sidHash)
+	public static function deleteSession(string $sidHash, string $fate)
 	{
 		$db = Database::db();
+		$typeRes = $db->query('SELECT `user` FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1', [$sidHash], 'checking session type');
+		if($typeRes !== false && count($typeRes) > 0 && $typeRes[0]['user'] !== NULL)
+		{
+			$copyQuery = 'INSERT INTO `ki_sessionsArchive` '
+				. 'SELECT `id_hash`,`user`,`ip`,`fingerprint`,`established`,`last_active`,`remember`,`last_id_reissue`,'
+				. '? AS fate, NOW() AS whenArchived '
+				. 'FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1';
+			$db->query($copyQuery, [$fate, $sidHash], 'archiving session before it is deleted');
+		}
+		
 		$db->query('DELETE FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1',
 			array($sidHash), 'deleting session');
 	}

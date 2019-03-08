@@ -164,3 +164,21 @@ CREATE TABLE `ki_savedFormData` (
   CONSTRAINT `fk_formdata_lasteditedby_users_id` FOREIGN KEY (`lastEdited_by`) REFERENCES `ki_users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_formdata_owner_users_id` FOREIGN KEY (`owner`) REFERENCES `ki_users` (`id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='One row for each "report", or "saved form setup".';
+
+CREATE TABLE `ki_sessionsArchive` (
+  `id_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user` int(11) NOT NULL,
+  `ip` int(11) NOT NULL,
+  `fingerprint` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `established` datetime NOT NULL,
+  `last_active` datetime DEFAULT NULL,
+  `remember` tinyint(1) NOT NULL,
+  `last_id_reissue` datetime NOT NULL,
+  `fate` enum('logout','deleted','expired_idle','expired_absolute','user_disabled','user_lockout','ip_block','relogin') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `whenArchived` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `fk_sessionArchive_user_users_id_idx` (`user`),
+  KEY `fk_sessionArchive_ip_ips_id_idx` (`ip`),
+  KEY `sessionArchive_id_hash` (`id_hash`),
+  CONSTRAINT `fk_sessionArchive_ip_ips_id` FOREIGN KEY (`ip`) REFERENCES `ki_IPs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_sessionArchive_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

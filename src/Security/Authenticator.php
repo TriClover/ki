@@ -149,7 +149,7 @@ class Authenticator
 		if($request->ipBlocked)
 		{
 			//Delete any existing session and leave the user without any session.
-			if($sidConfirmedGood) Session::deleteSession($session->id_hash);
+			if($sidConfirmedGood) Session::deleteSession($session->id_hash, 'ip_block');
 			Session::deleteCookie();
 			$ret = false;
 			$request->systemMessages[] = Authenticator::msg_maxAttemptsError;
@@ -178,7 +178,7 @@ class Authenticator
 			if($logout)
 			{
 				//Delete any existing session and give the user a new anonymous session.
-				if($sidConfirmedGood) Session::deleteSession($session->id_hash);
+				if($sidConfirmedGood) Session::deleteSession($session->id_hash, 'logout');
 				$ret = Authenticator::giveNewAnonymousSession($request);
 			}
 			elseif($nonceCarriesInstantLogin)
@@ -203,13 +203,13 @@ class Authenticator
 							if($newSession === false)
 							{
 								//on failure to promote, just delete existing session and make new one
-								Session::deleteSession($session->id_hash);
+								Session::deleteSession($session->id_hash, 'relogin');
 								$newSession = Session::create($nonce->user, false, $request);
 								$newSession->attach();
 							}
 						}else{
 							//delete existing session and make new one
-							Session::deleteSession($session->id_hash);
+							Session::deleteSession($session->id_hash, 'relogin');
 							$newSession = Session::create($nonce->user, false, $request);
 							$newSession->attach();
 						}
@@ -273,7 +273,7 @@ class Authenticator
 							}
 						}else{
 							//destroy existing user-session and make new session for user
-							Session::deleteSession($session->id_hash);
+							Session::deleteSession($session->id_hash, 'relogin');
 							$newSession = Session::create($user->id, $remember, $request);
 							$newSession->attach();
 						}

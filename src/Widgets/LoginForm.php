@@ -351,6 +351,17 @@ class LoginForm extends Form
 			return $text;
 		};
 		
+		$beforeDelete = function($pk)
+		{
+			$db = Database::db();
+			$copyQuery = 'INSERT INTO `ki_sessionsArchive` '
+				. 'SELECT `id_hash`,`user`,`ip`,`fingerprint`,`established`,`last_active`,`remember`,`last_id_reissue`,'
+				. '? AS fate, NOW() AS whenArchived '
+				. 'FROM `ki_sessions` WHERE `id_hash`=? LIMIT 1';
+			$db->query($copyQuery, ['deleted', $pk['ki_sessions.id_hash']], 'archiving session before it is deleted (manually)');
+			return true;
+		};
+		
 		$fields = [];
 		$fields[] = new DataTableField('id_hash',        'ki_sessions','Hashed ID',      true, false,false,[], $formatLongField, 1,false);
 		$fields[] = new DataTableField('user',           'ki_sessions','User ID',        false,false,false,[], NULL, 1,false);
@@ -363,7 +374,8 @@ class LoginForm extends Form
 		$fields[] = new DataTableField('last_id_reissue','ki_sessions','Last ID Reissue',true, false,false,[], NULL, 1,false);
 		$fields[] = new DataTableField(NULL,'ki_sessions','',false,false,false,[],NULL,1,false);
 		$filter = '`user`=' . $user->id . ' AND (' . $timeClause . ')';
-		$dt = new DataTable('sessions',['ki_sessions','ki_IPs'],$fields,false,true,$filter,100,false,false,false,false,NULL,NULL);
+		$events = new DataTableEventCallbacks(NULL, NULL, NULL, NULL, NULL, $beforeDelete);
+		$dt = new DataTable('sessions',['ki_sessions','ki_IPs'],$fields,false,true,$filter,100,false,false,false,false,$events,NULL);
 		return $dt;
 	}
 }
