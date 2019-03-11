@@ -21,7 +21,6 @@ class LoginForm extends Form
 	
 	//Location of editing pages
 	protected $profilePath;
-	protected $sessionPath;
 	
 	/**
 	* Sets up the constituent form objects for their separate handling.
@@ -29,13 +28,11 @@ class LoginForm extends Form
 	* @param sessionPath Used for "Sessions" link. Explicity set blank to remove the link.
 	*/
 	function __construct(string $profilePath = 'profile.php',
-	                     string $sessionPath = 'sessions.php',
 	                     bool   $showRegister= true)
 	{
 		$this->dataTable_register = LoginForm::getDataTable_register();
 		$this->pwForm = new PasswordResetForm();
 		$this->profilePath  = $profilePath;
-		$this->sessionPath  = $sessionPath;
 		$this->showRegister = $showRegister;
 	}
 	
@@ -116,9 +113,7 @@ class LoginForm extends Form
 		
 		$actions = [];
 		if(!empty($this->profilePath))
-			$actions[] = '<a href="' . $this->profilePath . '">Edit Profile</a>';
-		if(!empty($this->sessionPath))
-			$actions[] = '<a href="' . $this->sessionPath . '">Sessions</a>';
+			$actions[] = '<a href="' . $this->profilePath . '">Profile</a>';
 		$actions[] = '<form method="post" style="display:inline;"><input type="hidden" name="logout" value="1"/>'
 			. '<input type="submit" value="Logout" style="display:inline;"/></form>';
 		
