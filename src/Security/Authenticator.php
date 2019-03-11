@@ -92,6 +92,7 @@ class Authenticator
 		$credsConfirmedGood = false;
 		$credsConfirmedBad = false;
 		$user = NULL;
+		$trustedIp = false;
 		if($username !== NULL && $password !== NULL)
 		{
 			$providedCreds = true;
@@ -104,6 +105,7 @@ class Authenticator
 			{
 				$credsConfirmedGood = true;
 				$user = $userAttempt;
+				$trustedIp = $user->isTrustedIp($request->ipId);
 			}
 		}
 
@@ -252,6 +254,18 @@ class Authenticator
 					//Resend email confirmation email for this user
 					$request->systemMessages[] = Authenticator::msg_AccountReg;
 					$user->sendEmailConfirmation();
+					if($sidConfirmedGood)
+					{
+						$session->attach();
+					}else{
+						$ret = Authenticator::giveNewAnonymousSession($request);
+					}
+				}
+				elseif(!$trustedIp)
+				{
+					//Do email nonce for logging in from new IP
+					$request->systemMessages[] = 'We detect you are attempting to log in from a new location. A confirmation email has been sent to you containing a link you can use to login.';
+					$user->sendEmailNonceForNewLocation($request);
 					if($sidConfirmedGood)
 					{
 						$session->attach();

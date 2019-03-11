@@ -77,7 +77,7 @@ class User
 	}
 	
 	/**
-	* Send the mail for confirming this user's email address
+	* Send the mail for confirming this user's email address on account creation
 	*/
 	public function sendEmailConfirmation()
 	{
@@ -91,6 +91,38 @@ class User
 		$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
 		$mail->Body = Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
 		Mail::send($mail);
+	}
+	
+	/**
+	* Send the mail for confirming this user's email address for logging in from a new location.
+	* @param requestContext a Request object representing the request within which the login attempt is being made
+	*/
+	public function sendEmailNonceForNewLocation(Request $requestContext)
+	{
+		$site = Config::get()['general']['sitename'];
+		$nonce = Nonce::create('email_verify', $this->id, false, false);
+		$mail = new PHPMailer();
+		$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
+		$mail->FromName = $site . ' Account Management';
+		$mail->addAddress($this->email);
+		$mail->Subject = $site . ' Login From New Location';
+		$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
+		$mail->Body = 'We detected that you attempted to log in from a new location ' . $requestContext->ipAddress . '. Click the following link to allow logging in from your current location. If the login attempt was not made by you, you should change your password.' . "\n" . $link;
+		Mail::send($mail);
+	}
+
+	/**
+	* @param ipId the database ID of an IP address
+	* @return whether the user has logged in from the IP before, or NULL on error
+	*/
+	public function isTrustedIp(int $ipId)
+	{
+		$db = Database::db();
+		$query = 'SELECT ? IN(SELECT ip FROM ki_sessions WHERE user=? UNION SELECT ip FROM ki_sessionsArchive WHERE user=?) AS trusted';
+		$res = $db->query($query, [$ipId, $this->id, $this->id], 'checking session history for ip');
+		if($res === false || empty($res)) return NULL;
+		$row = $res[0];
+		return $row['trusted'];
 	}
 	
 	/**
