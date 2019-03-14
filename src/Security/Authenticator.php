@@ -105,7 +105,12 @@ class Authenticator
 			{
 				$credsConfirmedGood = true;
 				$user = $userAttempt;
-				$trustedIp = $user->isTrustedIp($request->ipId);
+				if($username == 'root')
+				{
+					$trustedIp = true;
+				}else{
+					$trustedIp = $user->isTrustedIp($request->ipId);
+				}
 			}
 		}
 
@@ -261,7 +266,7 @@ class Authenticator
 						$ret = Authenticator::giveNewAnonymousSession($request);
 					}
 				}
-				elseif(!$trustedIp)
+				elseif($trustedIp === false)
 				{
 					//Do email nonce for logging in from new IP
 					$request->systemMessages[] = 'We detect you are attempting to log in from a new location. A confirmation email has been sent to you containing a link you can use to login.';
@@ -273,6 +278,11 @@ class Authenticator
 						$ret = Authenticator::giveNewAnonymousSession($request);
 					}
 				}else{
+					if($trustedIp === NULL)
+					{
+						Log::error('Could not determine if IP was trusted so let them in anyway');
+					}
+					
 					if($sidConfirmedGood)
 					{
 						if($session->user === NULL)

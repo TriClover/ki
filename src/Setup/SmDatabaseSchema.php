@@ -13,7 +13,7 @@ class SmDatabaseSchema extends SetupModule
 	protected function handleParamsInternal()
 	{
 		$kiSchemaFileLocation = dirname(__FILE__) . '/schema.sql';
-		$appSchemaFileDir = $_SERVER['DOCUMENT_ROOT'] . '/../config/';
+		$appSchemaFileDir = $_SERVER['DOCUMENT_ROOT'] . '/../../config/';
 		$config = Config::get();
 		$db = Database::db();
 		$dbSchema = Database::db('schemaCompare');

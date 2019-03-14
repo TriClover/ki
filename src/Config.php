@@ -10,7 +10,7 @@ class Config
 	{
 		if(Config::$path === NULL)
 		{
-			Config::$path = $_SERVER['DOCUMENT_ROOT'] . '/../config/' . Ki::$siteName . '.json';
+			Config::$path = $_SERVER['DOCUMENT_ROOT'] . '/../../config/' . Ki::$siteName . '.json';
 		}
 		if(Config::$conf === NULL)
 		{

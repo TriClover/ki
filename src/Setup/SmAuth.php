@@ -13,7 +13,7 @@ class SmAuth extends SetupModule
 	protected function handleParamsInternal()
 	{
 		$config = Config::get();
-		$liveConfigLocation = $_SERVER['DOCUMENT_ROOT'] . '/../config/' . $this->setup->siteName . '.json';
+		$liveConfigLocation = $_SERVER['DOCUMENT_ROOT'] . '/../../config/' . $this->setup->siteName . '.json';
 
 		if(empty($config['root']['enable_root']) || !$config['root']['enable_root'])
 		{
