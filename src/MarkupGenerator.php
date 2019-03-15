@@ -21,7 +21,7 @@ class MarkupGenerator
 			'ki/ki.css',
 			'ki/ki.js',
 			'ki/ki_querybuilder.js',
-			'multiselect/css/jquery.multiselect.css',
+			'multiselect/jquery.multiselect.css',
 			'multiselect/src/jquery.multiselect.js'
 		];
 		$includes = '';
