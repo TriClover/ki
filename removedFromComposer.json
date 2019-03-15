@@ -1,0 +1,17 @@
+{
+	"require": {
+		"oomphinc/composer-installers-extender": ">=1.1",
+	},
+
+	/*Leave this out for now since oomphinc/composer-installers-extender is broken
+	It only seems to work for jquery-ui-multiselect-widget and not the other asset-packagist items
+	Ki will have its own installer copy these items to the configured directory
+	*/
+	"extra": {
+		"installer-types": ["bower-asset", "npm-asset", "component", "library"],
+		"installer-paths": {
+			"webroots/static/lib/{$name}/": ["bower-asset/jquery","bower-asset/jquery-ui","bower-asset/webshim","type:bower-asset", "type:npm-asset", "type:component"]
+		}
+	},
+
+}

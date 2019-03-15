@@ -14,20 +14,20 @@ class MarkupGenerator
 		$base      = $config['general']['staticUrl'];
 		$title     = $config['general']['sitename'] . ' - ' . htmlspecialchars(pathinfo($_SERVER['PHP_SELF'])['filename']);
 		$files     = [
-			'jquery.min.js',
+			'jquery/jquery.min.js',
 		    'jquery-ui/jquery-ui.min.js',
-			'jquery-ui/jquery-ui.min.css',
+			'jquery-ui/themes/base/jquery-ui.min.css',
 			'webshim/polyfiller.js',
 			'ki/ki.css',
 			'ki/ki.js',
 			'ki/ki_querybuilder.js',
-			'multiselect/jquery.multiselect.css',
-			'multiselect/jquery.multiselect.min.js'
+			'multiselect/css/jquery.multiselect.css',
+			'multiselect/src/jquery.multiselect.js'
 		];
 		$includes = '';
 		foreach($files as $file)
 		{
-			$mtime = filemtime($comp . '/' . $file);
+			$mtime = filemtime($comp . '/lib/' . $file);
 			$dotPosition = strrpos($file, '.');
 			if($dotPosition === false)
 			{
@@ -35,7 +35,7 @@ class MarkupGenerator
 				continue;
 			}
 			$extension = substr($file, $dotPosition+1);
-			$url = $base . '/' . $file . '?ver=' . $mtime;
+			$url = $base . '/lib/' . $file . '?ver=' . $mtime;
 			if($extension == 'css')
 			{
 				$includes .= '<link rel="stylesheet" href="' . $url . '"/>';
