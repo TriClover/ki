@@ -47,7 +47,7 @@ class MarkupGenerator
 			}
 		}
 		
-		$selectivizrFile = '/lib/selectivizr/selectivizr.js';
+		$selectivizrFile = '/lib/selectivizr/selectivizr-min.js';
 		$selectivizrTime = filemtime($comp . $selectivizrFile);
 		$selectivizrUrl = $base . $selectivizrFile . '?ver=' . $selectivizrTime;
 

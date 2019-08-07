@@ -11,8 +11,7 @@
 		"php": ">=7.0.0",
 		"bower-asset/jquery": ">=3.3.1",
 		"bower-asset/jquery-ui": ">=1.12.1",
-		"bower-asset/jquery-ui-multiselect-widget": ">=2.0.1",
-		"bower-asset/selectivizr": ">=1.0.2"
+		"bower-asset/jquery-ui-multiselect-widget": ">=2.0.1"
 	},
 	"autoload": {
 		"psr-4": { "mls\\ki\\": "src/" }

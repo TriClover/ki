@@ -1,7 +1,12 @@
 {
 	"require": {
 		"oomphinc/composer-installers-extender": ">=1.1",
-		"bower-asset/webshim": ">=1.16.0" /* This fails now, so we've included it statically */
+		/* These assets can't be loaded this way because they're set up to require
+		a github personal access token, a process that might work normally but
+		always fails when composer is being run by Ansible!!
+		*/
+		"bower-asset/webshim": ">=1.16.0",
+		"bower-asset/selectivizr": ">=1.0.2"
 	},
 
 	/*Leave this out for now since oomphinc/composer-installers-extender is broken
