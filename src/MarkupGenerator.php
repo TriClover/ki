@@ -46,6 +46,10 @@ class MarkupGenerator
 				$includes .= '<script src="' . $url . '"></script>';
 			}
 		}
+		
+		$selectivizrFile = '/lib/selectivizr/selectivizr.js';
+		$selectivizrTime = filemtime($comp . $selectivizrFile);
+		$selectivizrUrl = $base . $selectivizrFile . '?ver=' . $selectivizrTime;
 
 		$out = <<<HTMLHEAD
 <!DOCTYPE html>
@@ -56,6 +60,9 @@ class MarkupGenerator
   <link rel="shortcut icon" href="$base/favicon.ico"/>
   $includes
   <script>webshims.polyfill('forms forms-ext details geolocation');</script>
+  <!--[if (gte IE 6)&(lte IE 8)]>
+   <script type="text/javascript" src="$selectivizrUrl"></script>
+  <![endif]-->
   <title>$title</title>
   <meta itemprop="environment" content="$env"/>
 

@@ -1,6 +1,7 @@
 {
 	"require": {
 		"oomphinc/composer-installers-extender": ">=1.1",
+		"bower-asset/webshim": ">=1.16.0" /* This fails now, so we've included it statically */
 	},
 
 	/*Leave this out for now since oomphinc/composer-installers-extender is broken

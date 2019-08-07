@@ -1,6 +1,7 @@
 {
 	"name": "mls/ki",
 	"type": "library",
+	"license": "proprietary",
 	"description": "ki framework for PHP: The non-intrusive framework",
 	"require": {
 		"albertofem/rsync-lib": "dev-master",
@@ -11,7 +12,7 @@
 		"bower-asset/jquery": ">=3.3.1",
 		"bower-asset/jquery-ui": ">=1.12.1",
 		"bower-asset/jquery-ui-multiselect-widget": ">=2.0.1",
-		"bower-asset/webshim": ">=1.16.0"
+		"bower-asset/selectivizr": ">=1.0.2"
 	},
 	"autoload": {
 		"psr-4": { "mls\\ki\\": "src/" }
