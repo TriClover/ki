@@ -25,6 +25,9 @@ class Nonce
 	public $require_sessionHash; //If true, and $sessionHash is not null, nonce is only valid on requests in the session corresponding to $sessionHash
 	public $purpose;             //The feature that uses the nonce
 	public $createdTimestamp;    //When the nonce was added to the database
+	public $emailAddressId;      //What email address this nonce was sent to, if any
+	
+	public $emailNewlyVerified = false; //Whether the associated email address was just verified as a result of loading this nonce
 	
 	/**
 	* Create a new nonce and save it to the database.
@@ -33,12 +36,14 @@ class Nonce
 	* @param user The user id associated with this nonce; if NULL, and a user is logged in, use id of the currently logged in user.
 	* @param require_user whether the nonce should only be valid on requests where $user (if not null) is logged in. Should usually be true, but can be set to false for features used outside of login like password recovery, where $user is used to know which user's password to recover, rather than to require prior auth as that user.
 	* @param require_sessionHash whether the nonce should only be valid on requests attached to the current session, if there is one. Should usually be true but can be set to false for features where legitimate cross-session usage is likely, like nonces sent to emails
+	* @param emailAddressId the ID of the email address this nonce is being sent to, if any.
 	* @return a new Nonce object, or false if there was an error in creating the new nonce
 	*/
 	public static function create(string $purpose,
-	                              int $user=NULL,
-								  bool $require_user=true,
-								  bool $require_sessionHash=true)
+	                              int    $user = NULL,
+								  bool   $require_user = true,
+								  bool   $require_sessionHash = true,
+								  int    $emailAddressId = NULL)
 	{
 		$db = Database::db();
 		/* If duplicate purpose, return false instead of the original
@@ -60,8 +65,8 @@ class Nonce
 		$obj->require_sessionHash = $require_sessionHash;
 		$obj->purpose = $purpose;
 		
-		$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?, `user`=?,  `session`=?,      `requireUser`=?,   `requireSession`=?,       `purpose`=?,`created`=NOW()',
-			array(                                      $obj->nonceHash,$obj->user,$obj->sessionHash,$obj->require_user,$obj->require_sessionHash,$obj->purpose),
+		$nRes = $db->query('INSERT INTO `ki_nonces` SET `nonce_hash`=?, `user`=?,  `session`=?,      `requireUser`=?,   `requireSession`=?,       `purpose`=?,`created`=NOW(), `emailAddress`=?',
+			array(                                      $obj->nonceHash,$obj->user,$obj->sessionHash,$obj->require_user,$obj->require_sessionHash,$obj->purpose,               $emailAddressId),
 			'adding nonce');
 		if($nRes === false) return false;
 		$created = $db->query('SELECT UNIX_TIMESTAMP(`created`) AS created FROM `ki_nonces` WHERE `nonce_hash`=? LIMIT 1', array($obj->nonceHash), 'getting created-date of just-created nonce');
@@ -87,7 +92,7 @@ class Nonce
 		$config = Config::get();
 		$hash = Authenticator::pHash($value);
 		$ret = 'Unknown error.';
-		$nRes = $db->query('SELECT `user`,`session`,`requireUser`,`requireSession`,`purpose`,UNIX_TIMESTAMP(`created`) AS created FROM `ki_nonces` WHERE `nonce_hash`=? LIMIT 1',
+		$nRes = $db->query('SELECT `user`,`session`,`requireUser`,`requireSession`,`purpose`,UNIX_TIMESTAMP(`created`) AS created,`emailAddress` FROM `ki_nonces` WHERE `nonce_hash`=? LIMIT 1',
 			array($hash), 'getting data for supplied nonce');
 		if($nRes === false)
 		{
@@ -120,9 +125,11 @@ class Nonce
 			$ret->require_sessionHash = $nRes['requireSession'];
 			$ret->purpose             = $nRes['purpose'];
 			$ret->createdTimestamp    = $nRes['created'];
+			$ret->emailAddressId      = $nRes['emailAddress'];
 			
 			if(isset(Nonce::$allValid[$ret->purpose]))
 				Log::warn('Duplicate nonce purpose "' . $ret->purpose . '". Overwriting.');
+			
 			Nonce::$allValid[$ret->purpose] = $ret;
 		}
 
@@ -156,6 +163,20 @@ class Nonce
 		if($requestContext->ipBlocked)
 		{
 			return Authenticator::msg_maxAttemptsError;
+		}
+		
+		//If the nonce was sent to an email and is associated with a user 
+		//(and if that user and email are associated with each other)
+		//then mark the email as verified for that user
+		if($ret instanceof Nonce && $ret->emailAddressId !== NULL && $ret->user !== NULL)
+		{
+			$verifyEmailQuery = 'UPDATE `ki_emailAddressesOfUser` SET `verified`=NOW() WHERE `user`=? AND `emailAddress`=? AND `verified` IS NULL LIMIT 1';
+			$verifyEmailParams = [$ret->user, $ret->emailAddressId];
+			$verifyEmailRes = $db->query($verifyEmailQuery, $verifyEmailParams, 'marking email as verified for a user');
+			if($verifyEmailRes !== false && $verifyEmailRes > 0)
+			{
+				$ret->emailNewlyVerified = true;
+			}
 		}
 		
 		return $ret;

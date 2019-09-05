@@ -80,7 +80,7 @@ class FormSaver extends Form
 		$saverName = 'saver_'.$formName;
 		
 		//format the DataTable cells for the Data column
-		$dtFilter_data = function($contents, $type) use($saverName)
+		$dtFilter_data = function($contents, $type, &$row) use($saverName)
 		{
 			switch($type)
 			{
@@ -221,7 +221,7 @@ class FormSaver extends Form
 	*/
 	public static function getCategoryAdmin()
 	{
-		$permFilter = function($in, $type){
+		$permFilter = function($in, $type, &$row){
 			if($type == 'add')
 			{
 				return $in . ' reports in [name]';

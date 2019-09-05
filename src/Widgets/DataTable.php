@@ -24,7 +24,8 @@ class DataTable extends Form
 	protected $show_querylist;   //allow loading queries. if $show_querybuilder is false you only see the results and not the conditions
 	protected $show_querysave;   //allow saving queries. Only works if $show_querybuilder and $show_querylist are true.
 	protected $eventCallbacks;   //DataTableEventCallbacks object
-	protected $buttonCallbacks;  //array mapping titles to function names that get their own buttons in the table for each row. They recieve the PK.
+	protected $buttonCallbacks;  //array of CallbackButton objects that get their own buttons in the table for each row. The functions recieve the PK.
+	protected $headerText;       //text always shown at top of table
 	
 	//setup, calculated
 	protected $inPrefix;         //prefix of all HTML input names
@@ -67,7 +68,8 @@ class DataTable extends Form
 	                     bool   $show_querylist    = false,
 	                     bool   $show_querysave    = false, //todo
 	    DataTableEventCallbacks $eventCallbacks    = NULL,
-						 array  $buttonCallbacks   = NULL)
+						 array  $buttonCallbacks   = NULL,
+	                     string $headerText        = '')
 	{
 		//save parameters
 		$this->title             = preg_replace('/[^A-Za-z0-9_]/','',$title);
@@ -81,7 +83,8 @@ class DataTable extends Form
 		$this->show_querysave    = $show_querysave;
 		$this->eventCallbacks    = ($eventCallbacks !== NULL) ? $eventCallbacks : new DataTableEventCallbacks(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 		$this->buttonCallbacks   = $buttonCallbacks;
-
+		$this->headerText        = $headerText;
+		
 		//calculate more setup info
 		$this->inPrefix = 'ki_datatable_' . htmlspecialchars($this->title) . '_';
 		
@@ -272,6 +275,7 @@ class DataTable extends Form
 		
 		//generate html
 		$out = '';
+		$out .= $this->headerText;
 		$pageInput = '<input type="hidden" name="' . $this->inPrefix . 'page' . '" value="' . $this->page . '"/>';
 		$out .= '<div style="text-align:center;display:inline-block;">';
 		
@@ -428,13 +432,24 @@ class DataTable extends Form
 				if($this->fields[$col]->outputFilter !== NULL)
 				{
 					$filterFunc = $this->fields[$col]->outputFilter;
-					$dataCell = $filterFunc($dataCell, $cellType);
+					$dataCell = $filterFunc($dataCell, $cellType, $fqRow);
 				}
 				if($cellType == 'edit')
 				{
 					$dataRow .= "\n    " . '<div style="white-space:nowrap;">';
 				}else{
 					$dataRow .= "\n    " . '<div>';
+				}
+				if(!empty($this->fields[$col]->callbackButtons))
+				{
+					foreach($this->fields[$col]->callbackButtons as $index => $cb)
+					{
+						if(($cb->criteria)($fqRow))
+						{
+							$buttonName = $this->inputId('0', $fqRow, 'columnCB_' . base64_encode($col) . '-' . $index);
+							$dataCell .= ' <input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" class="ki_button_action" value="' . $cb->title . '" formnovalidate />';
+						}
+					}
 				}
 				
 				$dataRow .= $dataCell;
@@ -465,10 +480,11 @@ class DataTable extends Form
 			if(!empty($this->buttonCallbacks))
 			{
 				$dataRow .= "\n" . '    <div class="ki_table_action">' . $pageInput;
-				foreach($this->buttonCallbacks as $cbName => $cbFunc)
+				foreach($this->buttonCallbacks as $index => $cb)
 				{
-					$buttonName = $this->inputId('0', $fqRow, 'callback_'.$cbName);
-					$dataRow .= '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" class="ki_button_action" value="' . $cbName . '" formnovalidate />';
+					if(!(($cb->criteria)($fqRow))) continue;
+					$buttonName = $this->inputId('0', $fqRow, 'callback_'. $index);
+					$dataRow .= '<input type="submit" name="' . $buttonName . '" id="' . $buttonName . '" class="ki_button_action" value="' . $cb->title . '" formnovalidate />';
 				}
 				$dataRow .= "\n" . '    </div>';
 			}
@@ -551,7 +567,7 @@ class DataTable extends Form
 				if($this->fields[$col]->outputFilter !== NULL)
 				{
 					$filterFunc = $this->fields[$col]->outputFilter;
-					$addingCell = $filterFunc($addingCell, 'add');
+					$addingCell = $filterFunc($addingCell, 'add', $fqRow);
 				}
 				$out .= $addingCell;
 				$out .= "\n    " . '</div>';
@@ -800,6 +816,7 @@ END_SQL;
 			$deletePrefix = $this->inPrefix . 'delete_';
 			$deleteKeys = array();
 			$callbackPrefix = $this->inPrefix . 'callback_';
+			$columnCallbackPrefix = $this->inPrefix . 'columnCB_';
 
 			foreach($post as $key => $value)
 			{
@@ -849,12 +866,12 @@ END_SQL;
 					}
 					$deleteKeys[] = $pk_values;
 				}
-				elseif(mb_strpos($key,$callbackPrefix) === 0) //check for custom callback button
+				elseif(mb_strpos($key,$callbackPrefix) === 0) //check for row callback button
 				{
-					$cbName = $value;
+					$cbTitle = $value;
 					$key = mb_substr($key,mb_strlen($callbackPrefix));
-					$cbFunc = mb_substr($key,0,mb_strpos($key,'_'));
-					$key = mb_substr($key,mb_strlen($cbFunc)+1);
+					$cbIndex = mb_substr($key,0,mb_strpos($key,'_'));
+					$key = mb_substr($key,mb_strlen($cbIndex)+1);
 					
 					$key = base64_decode($key);
 					if($key === false)
@@ -879,9 +896,9 @@ END_SQL;
 						Log::warn('DataTable callback button had wrong number of primary key values');
 						continue;
 					}
-					if(!isset($this->buttonCallbacks[$cbName]))// || $this->buttonCallbacks[$cbName] != $cbFunc)
+					if(!isset($this->buttonCallbacks[$cbIndex]))
 					{
-						Log::warn('DataTable callback button specified invalid function/name: ' . $cbName . ',' . $cbFunc);
+						Log::warn('DataTable callback button specified invalid function/name: ' . $cbIndex . ':' . $cbTitle . ',' . $cbFunc);
 						continue;
 					}
 					$pkNamed = array();
@@ -890,7 +907,56 @@ END_SQL;
 						$name = $this->fields[$fqName]->name;
 						$pkNamed[$name] = $val;
 					}
-					$this->buttonCallbacks[$cbName]($pkNamed);
+					$cbMsg = ($this->buttonCallbacks[$cbIndex]->func)($pkNamed);
+					if(!empty($cbMsg)) $this->outputMessage[] = $cbMsg;
+				}
+				elseif(mb_strpos($key,$columnCallbackPrefix) === 0) //check for column callback button
+				{
+					$cbTitle = $value;
+					$key = mb_substr($key,mb_strlen($columnCallbackPrefix));
+					$cbIndexPair = mb_substr($key,0,mb_strpos($key,'_'));
+					$key = mb_substr($key,mb_strlen($cbIndexPair)+1);
+					
+					$cbIndexPair = explode('-',$cbIndexPair);
+					$cbCol = base64_decode($cbIndexPair[0]);
+					$cbIndex = $cbIndexPair[1];
+					
+					$key = base64_decode($key);
+					if($key === false)
+					{
+						Log::warn('DataTable column callback button failed base64 decoding');
+						continue;
+					}
+					$key = json_decode($key, true);
+					if($key === NULL)
+					{
+						Log::warn('DataTable column callback button failed json decoding');
+						continue;
+					}
+					if(count($key) != 2)
+					{
+						Log::warn('DataTable column callback button had wrong number of root elements');
+						continue;
+					}
+					$pk_values = $key[1];
+					if(count($pk_values) != count($this->pk))
+					{
+						Log::warn('DataTable column callback button had wrong number of primary key values');
+						continue;
+					}
+					if(!isset($this->fields[$cbCol]->callbackButtons[$cbIndex]))
+					{
+						Log::warn('DataTable column callback button specified invalid function/name: ' . $cbIndex . ':' . $cbTitle . ',' . $cbFunc);
+						continue;
+					}
+					$pkNamed = array();
+					foreach($pk_values as $fqName => $val)
+					{
+						$name = $this->fields[$fqName]->name;
+						$pkNamed[$name] = $val;
+					}
+					$cbMsg = ($this->fields[$cbCol]->callbackButtons[$cbIndex]->func)($pkNamed);
+					if(!empty($cbMsg)) $this->outputMessage[] = $cbMsg;
 				}
 				elseif(mb_strpos($key,$editPrefix) === 0) //check for edit input
 				{
@@ -1112,6 +1178,7 @@ END_SQL;
 						}
 					}
 				}
+				
 				//validate
 				$constraintsPass = true;
 				foreach($newRow as $col => $value)
@@ -1149,6 +1216,7 @@ END_SQL;
 					foreach($newRow as $col => $value)
 					{
 						$colname = $this->fields[$col]->name;
+						$tablename = $this->fields[$col]->table;
 						if(in_array($colname,$this->pk)) $pk[$col] = $value;
 						
 						if($this->fields[$col]->dataType == 'virtual')
@@ -1193,10 +1261,10 @@ END_SQL;
 							}else{
 								$setterVal = $searchRes[0]['keyVal'];
 							}
-							$setter = '`' . $setterField . '`=' . $setterVal;
-							$setters[] = $setter;
+							//$setter = '`' . $setterField . '`=' . $setterVal;
+							//$setters[] = $setter;
 						}else{
-							$setter = '`' . $colname . '`=';
+							$setter = '`' . $tablename . '`.`' . $colname . '`=';
 							if($value === NULL)
 							{
 								$setter .= 'NULL';
@@ -1211,6 +1279,7 @@ END_SQL;
 							$setters[] = $setter;
 						}
 					}
+
 					$query .= implode(',', $setters);
 					$res = $db->query($query, [], 'adding new row');
 					if($res === false)
@@ -1425,7 +1494,7 @@ END_SQL;
 				unset($row[$colFQ]);
 			}
 		}
-		return $this->inPrefix . $type . '_'
+		return $this->inPrefix . htmlspecialchars($type) . '_'
 			. str_replace('=','',base64_encode(json_encode([$fieldBeingEdited,$row])));
 	}
 	

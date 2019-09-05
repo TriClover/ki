@@ -129,7 +129,8 @@ class LoginForm extends Form
 	*/
 	protected static function getDataTable_register()
 	{
-		$reg_beforeAdd = function(&$row)
+		$emailIdOfNewUser = NULL;
+		$reg_beforeAdd = function(&$row) use(&$emailIdOfNewUser)
 		{
 			$db = Database::db();
 			$site = Config::get()['general']['sitename'];
@@ -139,35 +140,26 @@ class LoginForm extends Form
 			{
 				return 'Password and confirmation did not match.';
 			}
+			if(!isset($_POST['regEmail'])
+				|| filter_var($_POST['regEmail'], FILTER_VALIDATE_EMAIL) === false)
+			{
+				return 'Invalid email address.';
+			}
+			$email = $_POST['regEmail'];
+			
+			//turn the password into a hash before storing
+			$row['ki_users.password_hash'] = \password_hash($row['ki_users.password_hash'], PASSWORD_BCRYPT);
 
 			//Only failure paths will result in a mail being sent but we can set one up here to avoid repetition
 			$mail = new PHPMailer;
 			$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
 			$mail->FromName = $site . ' Account Management';
-			$mail->addAddress($row['ki_users.email']);
-			
-			//turn the password into a hash before storing
-			$row['ki_users.password_hash'] = \password_hash($row['ki_users.password_hash'], PASSWORD_BCRYPT);
+			$mail->addAddress($email);
 
-			//check for duplicate email: instead of letting the dataTable show duplicate error on mail field, abort.
-			$resMail = $db->query('SELECT `id`,`email_verified` FROM `ki_users` WHERE `email`=? LIMIT 1',
-				array($row['ki_users.email']), 'Checking for duplicate email');
-			if($resMail === false) return Authenticator::msg_databaseError;
-			if(!empty($resMail))
-			{
-				if($resMail[0]['email_verified'])
-				{
-					$mail->Subject = $site . ' Account Re-registration';
-					$mail->Body = 'It looks like you tried to register an account with this email address, but this email address is already associated with an account. If you are having trouble getting into your account, please use the "Forgot password/username?" feature on the site.';
-					Mail::send($mail);
-				}else{
-					$dupUser = User::loadFromId($resMail[0]['id']);
-					$dupUser->sendEmailConfirmation();
-				}
-				return Authenticator::msg_AccountReg;
-			}
-			
-			//check for duplicate username with same goals as above check for dup. email
+			/* Check for duplicate username
+			 instead of letting the dataTable show duplicate error on username field
+			 This way we don't reveal valid usernames here, they have to check their email
+			*/
 			$resUname = $db->query('SELECT `id` FROM `ki_users` WHERE `username`=? LIMIT 1',
 				array($row['ki_users.username']), 'checking for duplicate username');
 			if($resUname === false) return Authenticator::msg_databaseError;
@@ -180,26 +172,46 @@ class LoginForm extends Form
 				return Authenticator::msg_AccountReg;
 			}
 			
+			//get id of email address
+			$checkEmailQuery = 'SELECT `id` FROM `ki_emailAddresses` WHERE `emailAddress`=? LIMIT 1';
+			$checkEmailRes = $db->query($checkEmailQuery, [$email], 'checking if email address of new user is already tracked');
+			if($checkEmailRes === false) return Authenticator::msg_databaseError;
+			if(empty($checkEmailRes))
+			{
+				$addEmailQuery = 'INSERT INTO `ki_emailAddresses` SET `emailAddress`=?,`added`=NOW(),`firstVerified`=NULL,`lastMailSent`=NULL';
+				$addEmailRes = $db->query($addEmailQuery, [$email], 'saving email of new user');
+				if($addEmailRes === false) return Authenticator::msg_databaseError;
+				$emailIdOfNewUser = $db->connection->insert_id;
+			}else{
+				$emailIdOfNewUser = $checkEmailRes[0]['id'];
+			}
+
+			$row['ki_users.defaultEmailAddress'] = NULL;
+
 			return true;
 		};
 		
-		$reg_onAdd = function($userPKs)
+		$reg_onAdd = function($userPKs) use(&$emailIdOfNewUser)
 		{
 			$db = \mls\ki\Database::db();
 			$site = \mls\ki\Config::get()['general']['sitename'];
 			$from = 'noreply@' . $_SERVER['SERVER_NAME'];
-		
-			$resUser = $db->query('SELECT `email` FROM `ki_users` WHERE `id`=?',
-				array($userPKs['id']), 'getting ID of new user');
-			if($resUser !== false || !empty($resUser))
+			
+			$attachEmailQuery = 'INSERT INTO `ki_emailAddressesOfUser` SET `user`=?,`emailAddress`=?,`associated`=NOW(),`verified`=NULL';
+			$attachEmailRes = $db->query($attachEmailQuery, [$userPKs['id'], $emailIdOfNewUser], 'associating email address to user');
+			if($attachEmailRes !== false)
 			{
-				$newUser = User::loadFromId($userPKs['id']);
-				$newUser->sendEmailConfirmation();
+				$associationId = $db->connection->insert_id;
+				$setDefaultMailQuery = 'UPDATE `ki_users` SET `defaultEmailAddress`=? WHERE `id`=? LIMIT 1';
+				$setDefaultMailRes = $db->query($setDefaultMailQuery, [$associationId, $userPKs['id']], 'setting default email address of user');
 			}
+			
+			$newUser = User::loadFromId($userPKs['id']);
+			$newUser->sendEmailConfirmation();
 			return \mls\ki\Security\Authenticator::msg_AccountReg;
 		};
 		
-		$formatPassField = function($text, $action)
+		$formatPassField = function($text, $action, &$row)
 		{
 			if($action == 'add')
 			{
@@ -217,16 +229,25 @@ class LoginForm extends Form
 			return $text;
 		};
 		
+		$formatEmailField = function($text, $action, &$row)
+		{
+			if($action == 'add')
+			{
+				$text = '<span id="emailTwins">' . $text . ' <input type="email" name="regEmail" id="regEmail" placeholder="email address" required /></span>';
+				$text .= '<style>#emailTwins input:first-child{visibility:hidden;position:absolute;}</style>';
+			}
+			return $text;
+		};
+		
 		$passwordConstraints = LoginForm::getPasswordInputConstraints();
 		
 		$fields = array();
-		$fields[] = new DataTableField('id',            'ki_users', 'Register', false, false, false);
-		$fields[] = new DataTableField('username',      'ki_users', 'Username', true, false, true);
-		$fields[] = new DataTableField('email',         'ki_users', 'Email', true, false, true, array('type' => 'email'));
-		$fields[] = new DataTableField('email_verified','ki_users', NULL, false, false, 0);
-		$fields[] = new DataTableField('password_hash', 'ki_users', 'password', true, false, true, $passwordConstraints, $formatPassField);
-		$fields[] = new DataTableField('enabled',       'ki_users', NULL, false, false, 1);
-		$fields[] = new DataTableField('last_active',   'ki_users', NULL, false, false, false);
+		$fields[] = new DataTableField('id',                 'ki_users', 'Register', false, false, false);
+		$fields[] = new DataTableField('username',           'ki_users', 'Username', true,  false, true);
+		$fields[] = new DataTableField('defaultEmailAddress','ki_users', 'Email',    true,  false, true, [], $formatEmailField, -1);
+		$fields[] = new DataTableField('password_hash',      'ki_users', 'password', true,  false, true, $passwordConstraints, $formatPassField);
+		$fields[] = new DataTableField('enabled',            'ki_users', NULL,       false, false, 1);
+		$fields[] = new DataTableField('last_active',        'ki_users', NULL,       false, false, false);
 		$events = new DataTableEventCallbacks($reg_onAdd, NULL, NULL, $reg_beforeAdd, NULL, NULL);
 		return new DataTable('register', 'ki_users', $fields, true, false, false, 0, false, false, false, false, $events);
 	}
@@ -236,7 +257,7 @@ class LoginForm extends Form
 		$user = Authenticator::$user;
 		$passwordConstraints = LoginForm::getPasswordInputConstraints();
 		
-		$formatPassField = function($text, $action)
+		$formatPassField = function($text, $action, &$row)
 		{
 			if($action == 'edit')
 			{
@@ -269,8 +290,6 @@ class LoginForm extends Form
 			{
 				return 'Incorrect Old Password.';
 			}
-			
-
 
 			//turn the password into a hash before storing
 			$row['ki_users.password_hash'] = \password_hash($row['ki_users.password_hash'], PASSWORD_BCRYPT);
@@ -288,22 +307,156 @@ class LoginForm extends Form
 		return $dt;
 	}
 	
-	public static function getEmailEditor()
+	public static function getEmailEditor(int $userId = NULL)
 	{
-		$user = Authenticator::$user;
+		if($userId === NULL) $userId = Authenticator::$user->id;
 		
-		/*todo: new email address should require verification
-		This can't be done until after support for multiple email addresses.
-		If done now, might run into the situation where they type it wrong so it
-		can't be verified, but now they can't login because their email isn't verified.
-		With multiple, they can continue to use the old one until their new email is verified.
-		*/
+		//beforeadd: add address to table before the datatable tries to FK reference it
+		$newEmailId = NULL;
+		$newEmailAddr = NULL;
+		$beforeAdd = function(&$row) use($userId, &$newEmailId, &$newEmailAddr)
+		{
+			$email = $row['ki_emailAddresses.emailAddress'];
+			$db = Database::db();
+			$checkEmailQuery = 'SELECT `id` FROM `ki_emailAddresses` WHERE `emailAddress`=? LIMIT 1';
+			$checkEmailRes = $db->query($checkEmailQuery, [$email], 'checking if address exists');
+			if($checkEmailRes === false) return 'Database error checking address.';
+			if(empty($checkEmailRes))
+			{
+				$addEmailQuery = 'INSERT INTO `ki_emailAddresses` SET `emailAddress`=?,`added`=NOW()';
+				$addEmailRes = $db->query($addEmailQuery, [$email], 'adding email address to database');
+				if($addEmailRes === false) return 'Database error adding address.';
+				$newEmailId = $db->connection->insert_id;
+			}else{
+				$newEmailId = $checkEmailRes[0]['id'];
+			}
+			$row['ki_emailAddressesOfUser.emailAddress'] = $newEmailId;
+			$newEmailAddr = $email;
+			
+			return true;
+		};
+		
+		//onadd: send confirmation email, set default if there is none
+		$onAdd = function($pk) use($userId, &$newEmailId, &$newEmailAddr)
+		{
+			$db = Database::db();
+			$user = User::loadFromId($userId);
+			$mailObj = new Mail($newEmailId, $newEmailAddr, 'NOW()');
+			$user->sendEmailConfirmation($mailObj);
+			
+			if(!$user->hasVerifiedEmail())
+			{
+				$verified = $user->getVerifiedEmails();
+				$updateQuery = 'UPDATE `ki_users` SET `defaultEmailAddress`=? WHERE `id`=? LIMIT 1';
+				if(empty($verified))
+				{
+					$db->query($updateQuery, [$pk['id'], $userId], 'setting new mail to default since there was no default');
+				}else{
+					$db->query($updateQuery, [$verified[0]->associationId, $userId], 'setting first verified mail to default since there was no default');
+				}
+			}
+		};
+		
+		//beforedelete: block if trying to delete user's primary email
+		$beforeDelete = function($pk)
+		{
+			$db = Database::db();
+			$associationId = $pk['ki_emailAddressesOfUser.id'];
+			$checkQuery = 'SELECT `ki_users`.`defaultEmailAddress` AS def FROM `ki_emailAddressesOfUser` LEFT JOIN `ki_users` ON `ki_emailAddressesOfUser`.`user`=`ki_users`.`id` WHERE `ki_emailAddressesOfUser`.`id`=? LIMIT 1';
+			$checkRes = $db->query($checkQuery, [$associationId], 'checking default email address');
+			if($checkRes === false || empty($checkRes)) return 'Database error.';
+			if($checkRes[0]['def'] == $associationId) return "Can't delete the default email address. Make another address the default before deleting this one.";
+			return true;
+		};
+		
+		$verifiedButtons = [new CallbackButton('Resend',
+			function($pk) use($userId)
+			{
+				$assocationId = $pk['id'];
+				$user = User::loadFromId($userId);
+				foreach($user->getUnverifiedEmails() as $index => $mailObj)
+				{
+					if($mailObj->associationId == $assocationId)
+					{
+						$user->sendEmailConfirmation($mailObj);
+						return 'Verification mail re-sent.';
+					}
+				}
+				return 'Error finding email address.';
+			},
+			function($row)
+			{
+				foreach($row as $col => $val)
+				{
+					if(strpos($col,'verified') !== false)
+					{
+						if($val == 'Yes') return false;
+						return true;
+					}
+				}
+				return true;
+			}
+		)];
+		
+		$defaultButtons = [new CallbackButton('Make Default',
+			function($pk)
+			{
+				$assocationId = $pk['id'];
+				$db = Database::db();
+				$setQuery = 'UPDATE `ki_users` SET `defaultEmailAddress`=? WHERE `id`=(SELECT `user` FROM `ki_emailAddressesOfUser` WHERE `id`=?)';
+				$db->query($setQuery, [$assocationId, $assocationId], 'setting default to requested value');
+			},
+			function($row)
+			{
+				foreach($row as $col => $val)
+				{
+					if(strpos($col,'default') !== false)
+					{
+						$verified = false;
+						foreach($row as $col => $verVal)
+						{
+							if(strpos($col,'verified') !== false)
+							{
+								if($verVal == 'Yes') $verified = true;
+								else $verified = false;
+								break;
+							}
+						}
+						$isDefault = $val == 'Yes';
+						if($isDefault || !$verified) return false;
+						return true;
+					}
+				}
+				return true;
+			}
+		)];
+		
+		$events = new DataTableEventCallbacks($onAdd, NULL, NULL, $beforeAdd, NULL, $beforeDelete);
+		
+		$formatEmail = function($cell, $type, &$row) use(&$userId)
+		{
+			if(isset($_POST['editEmail']) || isset($_GET[ 'editEmail']))
+				$cell .= '<input type="hidden" name="editEmail" value="' . $userId . '"/>';
+			return $cell;
+		};
+
+		$headerText = '';
+		if(isset($_POST['editEmail']) || isset($_GET[ 'editEmail']))
+			$headerText = '<h1>Editing emails of user ' . $userId . '</h1><a href="?">Back to User Administration</a><br/><br/>';
 		
 		$fields = [];
-		$fields[] = new DataTableField('email', 'ki_users','Change Email', true,true, false,['type'=>'email'], NULL, 1,false);
-		$fields[] = new DataTableField(NULL,'ki_users','',false,false,false,[],NULL,1,false);
-		$filter = '`id`=' . $user->id;
-		$dt = new DataTable('profileEmail','ki_users',$fields,false,false,$filter,1,false,false,false,false,NULL,NULL);
+		$defaultEmailQuery = 'IF(`ki_emailAddressesOfUser`.`id`=(SELECT `defaultEmailAddress` FROM `ki_users` WHERE `ki_users`.`id`=`ki_emailAddressesOfUser`.`user`),"Yes","")';
+		$verifiedQuery = 'IF(`ki_emailAddressesOfUser`.`verified` IS NOT NULL,"Yes","No")';
+		
+		$fields[] = new DataTableField('emailAddress','ki_emailAddresses',      'Email',         true, false,true,['type'=>'email'], $formatEmail, 0,false);
+		$fields[] = new DataTableField('user',        'ki_emailAddressesOfUser','User',          false,false,$userId);
+		$fields[] = new DataTableField('associated',  'ki_emailAddressesOfUser','Added',         true, false,false);
+		$fields[] = new DataTableField($verifiedQuery,    '','Verified?',true, false,NULL,  [], NULL, 0, false, $verifiedButtons);
+		$fields[] = new DataTableField($defaultEmailQuery,'','Default',  true, false,false, [], NULL, 0, false, $defaultButtons);
+		$fields[] = new DataTableField(NULL,'ki_emailAddressesOfUser','',false,false,false,[],NULL,0,false);
+		
+		$filter = '`ki_emailAddressesOfUser`.`user`=' . $userId;
+		$dt = new DataTable('profileEmail',['ki_emailAddressesOfUser','ki_emailAddresses'],$fields,true,true,$filter,50,false,false,false,false,$events,NULL,$headerText);
 		return $dt;
 	}
 	
@@ -333,7 +486,7 @@ class LoginForm extends Form
 		$timeClause = '(`remember`=1 AND UNIX_TIMESTAMP(`established`)>'.$earliestValidEstablished.' AND UNIX_TIMESTAMP(`last_active`)>'.$earliestValidLastActive.')'
 			. ' OR (`remember`=0 AND UNIX_TIMESTAMP(`established`)>'.$earliestValidEstablishedTemp.' AND UNIX_TIMESTAMP(`last_active`)>'.$earliestValidLastActiveTemp.')';
 		
-		$formatLongField = function($text, $action)
+		$formatLongField = function($text, $action, &$row)
 		{
 			if($action == 'show')
 			{

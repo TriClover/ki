@@ -67,22 +67,35 @@ class PasswordResetForm extends Form
 			
 			if(isset($post['username'])) //password reset
 			{
-				$userData = $db->query('SELECT `id`,`email_verified` FROM `ki_users` WHERE `email`=? AND `username`=?',
-					array($post['email'], $post['username']),
-					'getting id of user');
+				//make sure they entered a valid combination of email and username,
+				//and check if the email is verified for them
+				$checkValidityQuery = <<<'END_SQL'
+				SELECT
+					`ki_users`.`id`                      AS userid,
+					`ki_emailAddresses`.`id`             AS emailid,
+					`ki_emailAddressesOfUser`.`id`       AS associationid,
+					`ki_emailAddressesOfUser`.`verified` AS verified
+				FROM `ki_emailAddressesOfUser`
+					LEFT JOIN `ki_users` ON `ki_emailAddressesOfUser`.`user`=`ki_users`.`id`
+					LEFT JOIN `ki_emailAddresses` ON `ki_emailAddressesOfUser`.`emailAddress`=`ki_emailAddresses`.`id`
+				WHERE `ki_emailAddresses`.`emailAddress`=? AND `ki_users`.`username`=?
+END_SQL;
+				$userData = $db->query($checkValidityQuery, [$post['email'], $post['username']], 'getting id of user');
 				if($userData === false)
 				{
 					$this->response = PasswordResetForm::resError;
 				}
 				elseif(!empty($userData))
 				{
-					$userid = $userData[0]['id'];
-					$emailVerified = $userData[0]['email_verified'];
+					$row = $userData[0];
+					$userid = $row['userid'];
+					$emailVerified = $row['verified'];
 					//if email not verified, send verification mail instead
 					if(!$emailVerified)
 					{
+						$mailObj = new Mail($row['mailid'], $post['email'], NULL,NULL,NULL, $row['associationid']);
 						$userObj = User::loadFromId($userid);
-						$userObj->sendEmailConfirmation();
+						$userObj->sendEmailConfirmation($mailObj);
 					}else{
 						$pwNonce = Nonce::create('password_reset', $userid, false, false);
 						$link = Util::getUrl() . '?ki_spn_pw=' . $pwNonce->nonceValue . '#auth_ForgotUsernamePassword';
@@ -95,18 +108,31 @@ class PasswordResetForm extends Form
 					$this->response = PasswordResetForm::resRequestRecieved;
 				}
 			}else{      //username recovery
-				$userData = $db->query('SELECT `username` FROM `ki_users` WHERE `email`=?', array($post['email']),
-					'getting username for user with given email');
+				$getNameQuery = <<<'END_SQL'
+				SELECT
+					`ki_users`.`username` AS username
+				FROM `ki_emailAddressesOfUser`
+					LEFT JOIN `ki_users` ON `ki_emailAddressesOfUser`.`user`=`ki_users`.`id`
+					LEFT JOIN `ki_emailAddresses` ON `ki_emailAddressesOfUser`.`emailAddress`=`ki_emailAddresses`.`id`
+				WHERE `ki_emailAddresses`.`emailAddress`=?
+END_SQL;
+				$userData = $db->query($getNameQuery, [$post['email']], 'getting username for user with given email');
 				if($userData === false)
 				{
 					$this->response = PasswordResetForm::resError;
 				}
 				elseif(!empty($userData))
 				{
-					$username = $userData[0]['username'];
+					$username = [];
+					foreach($userData as $row)
+					{
+						$username[] = $row['username'];
+					}
+					$username = implode(",\n", $username);
 					$mail->Subject = $site . ' Username Recovery';
 					$mail->Body = 'We recieved a username recovery request for this email address. '
-						. "\n" . 'Your username is ' . $username;
+						. "\n" . 'Here are all usernames associated with this email address: '
+						. "\n" . $username;
 					Mail::send($mail);
 					$this->response = PasswordResetForm::resRequestRecieved;
 				}else{

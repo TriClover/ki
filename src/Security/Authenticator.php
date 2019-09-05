@@ -170,12 +170,14 @@ class Authenticator
 			if($providedNonce !== false)
 			{
 				$nonce = Nonce::load($providedNonce, $request);
-				if($nonce instanceof Nonce && $nonce->purpose == 'email_verify')
+				if($nonce instanceof Nonce)
 				{
-					$request->systemMessages[] = 'Email verified.';
-					$db->query('UPDATE `ki_users` SET `email_verified`=1 WHERE `id`=? LIMIT 1',
-						array($nonce->user), 'setting email verification flag to TRUE for user');
-					$nonceCarriesInstantLogin = true;
+					if($nonce->purpose == 'email_verify')
+					{
+						$nonceCarriesInstantLogin = true;
+						if($nonce->emailNewlyVerified)
+							$request->systemMessages[] = 'Email verified.';
+					}
 				}else{
 					$request->systemMessages[] = $nonce;
 				}
@@ -254,7 +256,7 @@ class Authenticator
 						$ret = Authenticator::giveNewAnonymousSession($request);
 					}
 				}
-				elseif(!$user->email_verified)
+				elseif(!$user->hasVerifiedEmail())
 				{
 					//Resend email confirmation email for this user
 					$request->systemMessages[] = Authenticator::msg_AccountReg;
@@ -269,7 +271,8 @@ class Authenticator
 				elseif($trustedIp === false)
 				{
 					//Do email nonce for logging in from new IP
-					$request->systemMessages[] = 'We detect you are attempting to log in from a new location. A confirmation email has been sent to you containing a link you can use to login.';
+					//todo:let user select which email instead of default
+					$request->systemMessages[] = 'We detect you are attempting to log in from a new location. A confirmation email has been sent to your default email address containing a link you can use to login.';
 					$user->sendEmailNonceForNewLocation($request);
 					if($sidConfirmedGood)
 					{

@@ -124,7 +124,12 @@ class QueryBuilder extends Form
 		foreach($this->fields as $field)
 		{
 			$fieldsJson[$field->alias] = ['dataType' => $field->dataType, 'nullable' => $field->nullable, 'serialNum' => $field->serialNum, 'dropdownOptions' => $field->dropdownOptions];
-			if($field->dataType == 'virtual') $fieldsJson[$field->alias]['dropdownOptions'] = $field->manyToMany->dropdownOptions;
+			if($field->dataType == 'virtual' && $field->manyToMany !== false)
+			{
+				$fieldAlias = $field->alias;
+				$fieldMMDropdownOptions = $field->manyToMany->dropdownOptions;
+				$fieldsJson[$fieldAlias]['dropdownOptions'] = $fieldMMDropdownOptions;
+			}
 		}
 		$fieldsJson = json_encode($fieldsJson);
 		$out .= 'ki_querybuilder_fields["' . $this->inPrefix . '"] = ' . $fieldsJson . ';';

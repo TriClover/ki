@@ -49,16 +49,39 @@ CREATE TABLE `ki_groups` (
 CREATE TABLE `ki_users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `username` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `email` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `email_verified` tinyint(1) NOT NULL DEFAULT '0',
+  `defaultEmailAddress` int(11) DEFAULT NULL COMMENT 'should be null only while in the process of adding a new user',
   `password_hash` char(60) COLLATE utf8mb4_unicode_ci NOT NULL,
   `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `last_active` datetime DEFAULT NULL,
   `lockout_until` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username_UNIQUE` (`username`),
-  UNIQUE KEY `email_UNIQUE` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY `users_defaultEmailAddress_emailsOfUser_id_idx` (`defaultEmailAddress`),
+  CONSTRAINT `users_defaultEmail_emailsOfUser_id` FOREIGN KEY (`defaultEmailAddress`) REFERENCES `ki_emailAddressesOfUser` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_emailAddresses` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `emailAddress` varchar(254) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `added` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `firstVerified` datetime DEFAULT NULL COMMENT 'Time at which this address was first verified by anybody. A non-NULL value proves the address is real but does not imply that it is currently verified for any user.',
+  `lastMailSent` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `emailAddress_UNIQUE` (`emailAddress`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `ki_emailAddressesOfUser` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user` int(11) NOT NULL,
+  `emailAddress` int(11) NOT NULL,
+  `associated` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When the email address was associated to the user''s account',
+  `verified` datetime DEFAULT NULL COMMENT 'When the email address was verified for this user''s account',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `nodup` (`user`,`emailAddress`),
+  KEY `emailAddressesOfUser_emailAddress_emailAddresses_id_idx` (`emailAddress`),
+  CONSTRAINT `emailAddressesOfUser_emailAddress_emailAddresses_id` FOREIGN KEY (`emailAddress`) REFERENCES `ki_emailAddresses` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `emailAddressesOfUser_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_groupsOfUser` (
   `user` int(11) NOT NULL,
@@ -110,9 +133,12 @@ CREATE TABLE `ki_nonces` (
   `requireSession` tinyint(1) NOT NULL,
   `purpose` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `created` datetime NOT NULL,
+  `emailAddress` int(11) DEFAULT NULL,
   PRIMARY KEY (`nonce_hash`),
   KEY `nonces_user_users_id_idx` (`user`),
   KEY `nonces_ss_sss_idh_idx` (`session`),
+  KEY `nonces_email_emails_id_idx` (`emailAddress`),
+  CONSTRAINT `nonces_email_emails_id` FOREIGN KEY (`emailAddress`) REFERENCES `ki_emailAddresses` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `nonces_ss_sss_idh` FOREIGN KEY (`session`) REFERENCES `ki_sessions` (`id_hash`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `nonces_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -123,7 +149,7 @@ CREATE TABLE `ki_savableForms` (
   `description` text COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name_UNIQUE` (`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_savedFormCategories` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -139,7 +165,7 @@ CREATE TABLE `ki_savedFormCategories` (
   CONSTRAINT `fk_formcat_permAddDel` FOREIGN KEY (`permission_addDel`) REFERENCES `ki_permissions` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_formcat_permEdit` FOREIGN KEY (`permission_edit`) REFERENCES `ki_permissions` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_formcat_permView` FOREIGN KEY (`permission_view`) REFERENCES `ki_permissions` (`id`) ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ki_savedFormData` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -163,7 +189,7 @@ CREATE TABLE `ki_savedFormData` (
   CONSTRAINT `fk_formdata_form_forms_id` FOREIGN KEY (`form`) REFERENCES `ki_savableForms` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_formdata_lasteditedby_users_id` FOREIGN KEY (`lastEdited_by`) REFERENCES `ki_users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_formdata_owner_users_id` FOREIGN KEY (`owner`) REFERENCES `ki_users` (`id`) ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='One row for each "report", or "saved form setup".';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='One row for each "report", or "saved form setup".';
 
 CREATE TABLE `ki_sessionsArchive` (
   `id_hash` char(128) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -181,4 +207,16 @@ CREATE TABLE `ki_sessionsArchive` (
   KEY `sessionArchive_id_hash` (`id_hash`),
   CONSTRAINT `fk_sessionArchive_ip_ips_id` FOREIGN KEY (`ip`) REFERENCES `ki_IPs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_sessionArchive_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `ki_IPsOfUser` (
+  `ip` int(11) NOT NULL,
+  `user` int(11) NOT NULL,
+  `firstActive` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `lastActive` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `trustedSince` datetime DEFAULT NULL COMMENT 'If NULL, this is not a currently trusted IP for this user',
+  PRIMARY KEY (`ip`,`user`),
+  KEY `ipsOfUser_user_users_id_idx` (`user`),
+  CONSTRAINT `ipsOfUser_ip_ips_id` FOREIGN KEY (`ip`) REFERENCES `ki_IPs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `ipsOfUser_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

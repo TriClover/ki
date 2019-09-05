@@ -22,6 +22,7 @@ class DataTableField
 
 	//Presentation
 	public $outputFilter = NULL;
+	public $callbackButtons = [];
 
 	//Schema
 	public $dataType     = NULL;
@@ -61,7 +62,7 @@ class DataTableField
 	*                       false=disallow and use default/auto value
 	*                       string/number/NULL=disallow and use this value instead
 	* @param constraints   HTML5 form validation constraints. These will be used directly in the form and interpreted for server-side checks.
-	* @param outputFilter  Function that recieves table cell contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add)
+	* @param outputFilter  Function that recieves table cell HTML contents and outputs what they will be replaced with. Second parameter is the cell type: (show, edit, add). Third param is the row data
 	* @param dropdownLimit If this field is eligible to become a FK based dropdown, calculate the number of options it would have, and if it is more than dropdownLimit then revert to making it a text field instead to avoid excessive page load time
 	* @param manyToMany    If true, this field will be a virtual field representing a
 	*                       many-to-many relation between the DataTable's main table and some
@@ -71,6 +72,7 @@ class DataTableField
 	*                       Other parameters will be interpereted as follows:
 	*                       table = the related table with which to make and break associations
 	*                       name = the field in the related table to show as values in the select.
+	* @param callbackButtons array of CallbackButton objects to apply to the column
 	*/
 	function __construct(         $name,
 	                     string   $table,
@@ -81,7 +83,8 @@ class DataTableField
 						 array    $constraints = array(),
 						 callable $outputFilter = NULL,
 						 int      $dropdownLimit = 200,
-						 bool     $manyToMany = false)
+						 bool     $manyToMany = false,
+						 array    $callbackButtons = NULL)
 	{
 		$this->name = $name;
 		$this->table = $table;
@@ -100,6 +103,7 @@ class DataTableField
 		{
 			$this->manyToMany = new DataTableMultiRelation($table, $alias, $name);
 		}
+		if($callbackButtons !== NULL) $this->callbackButtons = $callbackButtons;
 	}
 	
 	function fqName(bool $quoted = false)

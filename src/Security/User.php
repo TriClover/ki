@@ -7,6 +7,7 @@ use \mls\ki\Util;
 use \mls\ki\Widgets\DataTable;
 use \mls\ki\Widgets\DataTableField;
 use \mls\ki\Widgets\DataTableEventCallbacks;
+use \mls\ki\Widgets\LoginForm;
 use \PHPMailer\PHPMailer\PHPMailer;
 
 /**
@@ -17,8 +18,8 @@ class User
 	//Database fields
 	public $id;
 	public $username;
-	public $email;
-	public $email_verified;
+	public $emails;
+	public $defaultEmail;
 	public $password_hash;
 	public $enabled;
 	public $last_active;
@@ -30,19 +31,19 @@ class User
 	public $permissionsById = array();
 	public $permissionsByName = array();
 	
-	function __construct(int    $id,
-	                     string $username,
-						 string $email,
-						 bool   $email_verified,
-						 string $password_hash,
-						 bool   $enabled,
-						        $last_active,
-						        $lockout_until)
+	function __construct(int          $id,
+	                     string       $username,
+						 array        $emails,
+						 \mls\ki\Mail $defaultEmail=NULL,
+						 string       $password_hash,
+						 bool         $enabled,
+						              $last_active,
+						              $lockout_until)
 	{
 		$this->id             = $id;
 		$this->username       = $username;
-		$this->email          = $email;
-		$this->email_verified = $email_verified;
+		$this->emails         = $emails;
+		$this->defaultEmail   = $defaultEmail;
 		$this->password_hash  = $password_hash;
 		$this->enabled        = $enabled;
 		$this->last_active    = $last_active;
@@ -77,34 +78,49 @@ class User
 	}
 	
 	/**
-	* Send the mail for confirming this user's email address on account creation
+	* Send the mail for confirming this user's email address
+	* @param addrObj Which of the addresses to confirm for this user. If NULL, send to all unverified addresses.
 	*/
-	public function sendEmailConfirmation()
+	public function sendEmailConfirmation(\mls\ki\Mail $addrObj = NULL)
 	{
-		$site = Config::get()['general']['sitename'];
-		$nonce = Nonce::create('email_verify', $this->id, false, false);
-		$mail = new PHPMailer();
-		$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
-		$mail->FromName = $site . ' Account Management';
-		$mail->addAddress($this->email);
-		$mail->Subject = $site . ' Account Creation';
-		$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
-		$mail->Body = Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
-		Mail::send($mail);
+		$mails = [];
+		if($addrObj === NULL)
+		{
+			$mails = $this->getUnverifiedEmails();
+		}else{
+			$mails = [$addrObj];
+		}
+		
+		foreach($mails as $m)
+		{
+			$site = Config::get()['general']['sitename'];
+			$nonce = Nonce::create('email_verify', $this->id, false, false, $m->id);
+			$mail = new PHPMailer();
+			$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
+			$mail->FromName = $site . ' Account Management';
+			$mail->addAddress($m->emailAddress);
+			$mail->Subject = $site . ' Email Verification';
+			$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
+			$mail->Body = Authenticator::msg_AccountVerifyInstruction . "\n" . $link;
+			Mail::send($mail);
+		}
 	}
 	
 	/**
 	* Send the mail for confirming this user's email address for logging in from a new location.
 	* @param requestContext a Request object representing the request within which the login attempt is being made
+	* @param address Which of the addresses to use. If NULL, use the default.
 	*/
-	public function sendEmailNonceForNewLocation(Request $requestContext)
+	public function sendEmailNonceForNewLocation(Request $requestContext, \mls\ki\Mail $address = NULL)
 	{
+		if($address === NULL) $address = $this->defaultEmail;
+		
 		$site = Config::get()['general']['sitename'];
-		$nonce = Nonce::create('email_verify', $this->id, false, false);
+		$nonce = Nonce::create('email_verify', $this->id, false, false, $address->id);
 		$mail = new PHPMailer();
 		$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
 		$mail->FromName = $site . ' Account Management';
-		$mail->addAddress($this->email);
+		$mail->addAddress($address->emailAddress);
 		$mail->Subject = $site . ' Login From New Location';
 		$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
 		$mail->Body = 'We detected that you attempted to log in from a new location ' . $requestContext->ipAddress . '. Click the following link to allow logging in from your current location. If the login attempt was not made by you, you should change your password.' . "\n" . $link;
@@ -122,7 +138,75 @@ class User
 		$res = $db->query($query, [$ipId, $this->id, $this->id], 'checking session history for ip');
 		if($res === false || empty($res)) return NULL;
 		$row = $res[0];
-		return $row['trusted'];
+		return $row['trusted'] == 1;
+	}
+	
+	public function getVerifiedEmails()
+	{
+		$verifiedEmails = [];
+		foreach($this->emails as $mail)
+		{
+			if($mail->whenVerifiedForCurrentUser !== NULL) $verifiedEmails[] = $mail;
+		}
+		return $verifiedEmails;
+	}
+	
+	public function getUnverifiedEmails()
+	{
+		$unverifiedEmails = [];
+		foreach($this->emails as $mail)
+		{
+			if($mail->whenVerifiedForCurrentUser === NULL) $unverifiedEmails[] = $mail;
+		}
+		return $unverifiedEmails;
+	}
+	
+	public function hasVerifiedEmail()
+	{
+		foreach($this->emails as $mail)
+		{
+			if($mail->whenVerifiedForCurrentUser !== NULL) return true;
+		}
+		return false;
+	}
+	
+	public static function getEmailsOfUser(int $userId)
+	{
+		$db = Database::db();
+		$emailQuery = <<<END_SQL
+		SELECT
+			`ki_emailAddresses`.`id`               AS emailAddressId,
+			`ki_emailAddresses`.`emailAddress`     AS address,
+			`ki_emailAddresses`.`added`            AS whenAdded,
+			`ki_emailAddresses`.`firstVerified`    AS firstVerified,
+			`ki_emailAddresses`.`lastMailSent`     AS lastMailSent,
+			`ki_emailAddressesOfUser`.`id`         AS associationId,
+			`ki_emailAddressesOfUser`.`associated` AS whenAssociatedToCurrentUser,
+			`ki_emailAddressesOfUser`.`verified`   AS whenVerifiedForCurrentUser,
+			(SELECT `defaultEmailAddress` FROM `ki_users` WHERE `ki_users`.`id`=?)
+				= `ki_emailAddressesOfUser`.`id`   AS isDefault
+		FROM `ki_emailAddressesOfUser`
+			LEFT JOIN `ki_emailAddresses` ON `ki_emailAddressesOfUser`.`emailAddress`=`ki_emailAddresses`.`id`
+		WHERE `ki_emailAddressesOfUser`.`user`=?
+END_SQL;
+		$emailRes = $db->query($emailQuery, [$userId,$userId], 'getting email addresses of user');
+		if($emailRes === false) return false;
+		$emails = [];
+		$defaultEmail = NULL;
+		foreach($emailRes as $row)
+		{
+			$mail = new Mail($row['emailAddressId'],
+			                 $row['address'],
+			                 $row['whenAdded'],
+			                 $row['firstVerified'],
+			                 $row['lastMailSent'],
+			                 $row['associationId'],
+			                 $row['whenAssociatedToCurrentUser'],
+			                 $row['whenVerifiedForCurrentUser']);
+			$emails[] = $mail;
+			if($row['isDefault']) $defaultEmail = $mail;
+		}
+		return ['emails' => $emails, 'defaultEmail' => $defaultEmail];
 	}
 	
 	/**
@@ -136,7 +220,7 @@ class User
 	public static function loadFromCreds(string $username, string $password, Request $requestContext)
 	{
 		$db = Database::db();
-		$user = $db->query('SELECT `id`,`email`,`email_verified`,`password_hash`,`enabled`,UNIX_TIMESTAMP(`last_active`) AS last_active,UNIX_TIMESTAMP(`lockout_until`) AS lockout_until FROM `ki_users` WHERE `username`=? LIMIT 1',
+		$user = $db->query('SELECT `id`,`password_hash`,`enabled`,UNIX_TIMESTAMP(`last_active`) AS last_active,UNIX_TIMESTAMP(`lockout_until`) AS lockout_until FROM `ki_users` WHERE `username`=? LIMIT 1',
 			array($username), 'Checking for username');
 		if($user === false) return false;
 
@@ -154,16 +238,22 @@ class User
 		}else{
 			if(!password_verify($password, $user[0]['password_hash'])) return NULL;
 		}
-		
 		$user = $user[0];
-		$ret =  new User($user['id'],
-		                 $username,
-		                 $user['email'],
-		                 $user['email_verified'],
-		                 $user['password_hash'],
-		                 $user['enabled'],
-		                 $user['last_active'],
-		                 $user['lockout_until']);
+		
+		//fill email address array
+		$emailsMap = User::getEmailsOfUser($user['id']);
+		if($emailsMap === false) return false;
+		$emails = $emailsMap['emails'];
+		$defaultEmail = $emailsMap['defaultEmail'];
+		
+		$ret = new User($user['id'],
+		                $username,
+		                $emails,
+		                $defaultEmail,
+		                $user['password_hash'],
+		                $user['enabled'],
+		                $user['last_active'],
+		                $user['lockout_until']);
 		return $ret;
 	}
 	
@@ -176,15 +266,22 @@ class User
 	public static function loadFromId(int $id)
 	{
 		$db = Database::db();
-		$user = $db->query('SELECT `username`,`email`,`email_verified`,`password_hash`,`enabled`,UNIX_TIMESTAMP(`last_active`) AS last_active,UNIX_TIMESTAMP(`lockout_until`) AS lockout_until FROM `ki_users` WHERE `id`=? LIMIT 1',
+		$user = $db->query('SELECT `username`,`password_hash`,`enabled`,UNIX_TIMESTAMP(`last_active`) AS last_active,UNIX_TIMESTAMP(`lockout_until`) AS lockout_until FROM `ki_users` WHERE `id`=? LIMIT 1',
 			array($id), 'Getting user by ID');
 		if($user === false) return false;
 		if(empty($user)) return NULL;
 		$user = $user[0];
+		
+		//fill email address array
+		$emailsMap = User::getEmailsOfUser($id);
+		if($emailsMap === false) return false;
+		$emails = $emailsMap['emails'];
+		$defaultEmail = $emailsMap['defaultEmail'];
+		
 		$ret =  new User($id,
 		                 $user['username'],
-		                 $user['email'],
-		                 $user['email_verified'],
+		                 $emails,
+		                 $defaultEmail,
 		                 $user['password_hash'],
 		                 $user['enabled'],
 		                 $user['last_active'],
@@ -197,7 +294,10 @@ class User
 	*/
 	public static function getUserAdmin()
 	{
-		$addHashControls = function($cell, $type)
+		if(isset($_POST['editEmail'])) return LoginForm::getEmailEditor($_POST['editEmail']);
+		if(isset($_GET[ 'editEmail'])) return LoginForm::getEmailEditor($_GET[ 'editEmail']);
+		
+		$addHashControls = function($cell, $type, &$row)
 		{
 			$out = '';
 			
@@ -223,16 +323,44 @@ class User
 			return $out;
 		};
 		
+		$formatEmailCell = function($cell, $type, &$row)
+		{
+			$out = $cell;
+			if($type == 'show')
+			{
+				$styles = 'white-space:nowrap;font-size:80%;';
+				
+				$out = str_replace(' ','&nbsp;',$out);
+				$out = str_replace(',','<br/>',$out);
+				$out .= '<br/><a href="?editEmail=' . $row['ki_users.id'] . '">Edit</a>';
+				$out = '<span style="' . $styles . '">' . $out . '</span>';
+			}
+			return $out;
+		};
+
 		$userFields = array();
+		$emailsQuery = <<<END_SQL
+		(
+			SELECT
+				GROUP_CONCAT(CONCAT(
+					`ki_emailAddresses`.`emailAddress`,
+					IF(`ki_users`.`defaultEmailAddress` = `ki_emailAddressesOfUser`.`id`," (Def.)",""),
+					IF(`ki_emailAddressesOfUser`.`verified` IS NULL," (unverified)","")
+				))
+			FROM `ki_emailAddressesOfUser`
+				LEFT JOIN `ki_emailAddresses` ON `ki_emailAddressesOfUser`.`emailAddress`=`ki_emailAddresses`.`id`
+			WHERE `ki_emailAddressesOfUser`.`user`=`ki_users`.`id`
+		)
+END_SQL;
 		$userFields[] = new DataTableField('id',            'ki_users', 'ID',             true, false, false);
 		$userFields[] = new DataTableField('username',      'ki_users', 'Username',       true, false, true );
-		$userFields[] = new DataTableField('email',         'ki_users', 'Email address',  true, true,  true );
-		$userFields[] = new DataTableField('email_verified','ki_users', 'Email verified?',true, true,  false);
-		$userFields[] = new DataTableField('password_hash', 'ki_users', 'Password',       true, true,  true, [], $addHashControls);
+		$userFields[] = new DataTableField($emailsQuery,    '',         'Email addresses',true, false, false, [], $formatEmailCell);
+		$userFields[] = new DataTableField('password_hash', 'ki_users', 'Password',       true, true,  true,  [], $addHashControls);
 		$userFields[] = new DataTableField('enabled',       'ki_users', 'Enabled?',       true, true,  true );
 		$userFields[] = new DataTableField('last_active',   'ki_users', 'Last Active',    true, false, false);
 		$userFields[] = new DataTableField('lockout_until', 'ki_users', 'Lockout Until:', true, true,  false);
 		$userFields[] = new DataTableField('name',          'ki_groups','Groups:',        true, true,  true, [], NULL, 200, true);
+		$userFields[] = new DataTableField(NULL, '', '', false, false, false, [], NULL);
 		
 		$beforeEdit = function(&$row)
 		{
@@ -257,7 +385,7 @@ class User
 		};
 	
 		$callbacks = new DataTableEventCallbacks(NULL, NULL, NULL, $beforeEdit, $beforeEdit, NULL);
-		$filter = 'username != "root"';
+		$filter = '`username` != "root"';
 		
 		return new DataTable('userAdmin','ki_users', $userFields, true, true, $filter, 50, true, true, false, false, $callbacks);
 	}
