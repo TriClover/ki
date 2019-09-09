@@ -24,7 +24,7 @@ class SmDatabaseData extends SetupModule
 		}
 		if(empty($res))
 		{
-			$res = $db->query('INSERT INTO `ki_users` SET `username`="root",`email`=NULL,`password_hash`="no",`enabled`=1,`last_active`=NULL,`lockout_until`=NULL', array(), 'creating root user');
+			$res = $db->query('INSERT INTO `ki_users` SET `username`="root",`password_hash`="no",`enabled`=1,`last_active`=NULL,`lockout_until`=NULL', array(), 'creating root user');
 			if($res === false)
 			{
 				$this->msg = 'Database error creating root account.';

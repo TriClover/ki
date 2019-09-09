@@ -42,7 +42,7 @@ class SmAuth extends SetupModule
 		}
 		
 		session_start();
-		if($_SESSION['setupAuth'] !== 1)
+		if(isset($_SESSION['setupAuth']) && $_SESSION['setupAuth'] !== 1)
 		{
 			$passwordForm = '<form method="post"><input type="password" name="password" placeholder="password" required /><input type="submit" value="Login"/></form>';
 			if(!empty($_POST['password']))

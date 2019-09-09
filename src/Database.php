@@ -224,8 +224,10 @@ END_SCRIPT;
 	public function generateDiffSQL(Database $dbSchema, string $schema)
 	{
 		//load schema
-		if(!$dbSchema->dropAllTables()) return 'Error preparing to load schema into temp comparison DB';
+		if(false === $dbSchema->dropAllTables()) return 'Error preparing to load schema into temp comparison DB';
+		if(false === $dbSchema->query('SET foreign_key_checks = 0',[],'Ignoring foreign keys for temp diff DB schema import')) return 'Error ignoring foreign keys for temp diff DB schema import';
 		$res = $dbSchema->runScript($schema, 'Loading schema into temp comparison DB');
+		if(false === $dbSchema->query('SET foreign_key_checks = 1',[],'Reenabling foreign keys for temp diff DB schema import')) return 'Error reenabling foreign keys for temp diff DB schema import';
 		if(in_array(false, $res)) return 'Error loading schema into temp comparison DB';
 		
 		//compare main DB to comparison DB

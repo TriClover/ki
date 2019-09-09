@@ -256,7 +256,7 @@ class Authenticator
 						$ret = Authenticator::giveNewAnonymousSession($request);
 					}
 				}
-				elseif(!$user->hasVerifiedEmail())
+				elseif(!$user->hasVerifiedEmail() && $username != 'root')
 				{
 					//Resend email confirmation email for this user
 					$request->systemMessages[] = Authenticator::msg_AccountReg;

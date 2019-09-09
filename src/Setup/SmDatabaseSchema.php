@@ -82,7 +82,9 @@ class SmDatabaseSchema extends SetupModule
 			if(!empty($outCompare) && !empty($_POST['runsql']))
 			{
 				$constructedScript = implode("\n",$outCompare);
+				if(false === $thisDB->query('SET foreign_key_checks = 0',[],'Ignoring foreign keys for temp diff DB schema import')) return 'Error ignoring foreign keys for schema update';
 				$res = $thisDB->runScript($constructedScript, 'Running update script from diff on DB ' . $title);
+				if(false === $dbSchema->query('SET foreign_key_checks = 1',[],'Reenabling foreign keys for temp diff DB schema import')) return 'Error reenabling foreign keys after schema update';
 				if(in_array(false, $res) || empty($res))
 				{
 					$this->msg = 'Error running update script from diff on ' . $title . ' DB - Try running it manually.<br/>';

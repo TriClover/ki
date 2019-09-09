@@ -57,7 +57,7 @@ abstract class Form extends Widget
 	{
 		if(!$this->handledParams)
 		{
-			Log::warn('Form generating HTML without having handled params. This may cause usability issues.');
+			Log::warn('Form ' . get_class($this) . ' generating HTML without having handled params. This may cause usability issues.');
 		}
 		return parent::getHTML();
 	}

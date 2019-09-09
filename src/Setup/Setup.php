@@ -63,23 +63,28 @@ class Setup extends Form
 			$html = $mod->getHTML();
 			$out .= '<tr><td>' . $mod->getFriendlyName() . '</td>';
 			$processed = true;
-			switch($this->responses[$mn])
+			if(!isset($this->responses[$mn]))
 			{
-				case SetupModule::SUCCESS:
-				$out .= '<td class="success">✔';
-				break;
-				
-				case SetupModule::FAILURE:
-				$out .= '<td class="failure">✘';
-				break;
-				
-				case SetupModule::WARNING:
-				$out .= '<td class="warning">⚠️';
-				break;
-				
-				default:
-				$out .= '<td>?';
 				$processed = false;
+			}else{
+				switch($this->responses[$mn])
+				{
+					case SetupModule::SUCCESS:
+					$out .= '<td class="success">✔';
+					break;
+					
+					case SetupModule::FAILURE:
+					$out .= '<td class="failure">✘';
+					break;
+					
+					case SetupModule::WARNING:
+					$out .= '<td class="warning">⚠️';
+					break;
+					
+					default:
+					$out .= '<td>?';
+					$processed = false;
+				}
 			}
 			$out .= '</td><td>' . ($processed?$html:'&nbsp;') . '</td></tr>';
 		}
