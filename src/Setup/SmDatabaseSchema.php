@@ -82,12 +82,45 @@ class SmDatabaseSchema extends SetupModule
 			if(!empty($outCompare) && !empty($_POST['runsql']))
 			{
 				$constructedScript = implode("\n",$outCompare);
-				if(false === $thisDB->query('SET foreign_key_checks = 0',[],'Ignoring foreign keys for temp diff DB schema import')) return 'Error ignoring foreign keys for schema update';
+				if(false === $thisDB->query('SET foreign_key_checks = 0',[],'Ignoring foreign keys for temp diff DB schema import')) {$this->msg = 'Error ignoring foreign keys for schema update'; return SetupModule::FAILURE;}
 				$res = $thisDB->runScript($constructedScript, 'Running update script from diff on DB ' . $title);
-				if(false === $dbSchema->query('SET foreign_key_checks = 1',[],'Reenabling foreign keys for temp diff DB schema import')) return 'Error reenabling foreign keys after schema update';
-				if(in_array(false, $res) || empty($res))
+				if(false === $dbSchema->query('SET foreign_key_checks = 1',[],'Reenabling foreign keys for temp diff DB schema import')) {$this->msg = 'Error reenabling foreign keys after schema update'; return SetupModule::FAILURE;}
+				if(empty($res))
 				{
-					$this->msg = 'Error running update script from diff on ' . $title . ' DB - Try running it manually.<br/>';
+					$this->msg = 'Total failure running update script from diff on ' . $title . ' DB - Try running it manually.<br/>';
+					return SetupModule::FAILURE;
+				}
+				$failedLines = [];
+				$scriptWithFailedLinesIndicated = '';
+				$stmtNum = 0;
+				$isLastLineInStmt = true;
+				foreach($outCompare as $lineNum => $lineSql)
+				{
+					$previousLineWasLastInStmt = $isLastLineInStmt;
+					$isLastLineInStmt = mb_strpos($lineSql, ';') !== false;
+					$currentStmtIsFailure = $res[$stmtNum] === false;
+					
+					if($currentStmtIsFailure && $previousLineWasLastInStmt)
+					{
+						$scriptWithFailedLinesIndicated .= '<span style="color:red;">';
+						$failedLines[] = $stmtNum;
+					}
+					
+					$scriptWithFailedLinesIndicated .= $lineSql . "<br/>\n";
+					
+					if($currentStmtIsFailure && $isLastLineInStmt)
+						$scriptWithFailedLinesIndicated .= '</span>';
+						
+					if($isLastLineInStmt) ++$stmtNum;
+				}
+				if(!empty($failedLines))
+				{
+					$this->msg = 'Error running update script from diff on '
+						. $title . ' DB - Try running it manually.<br/>'
+						. '<fieldset><legend>Script for ' . $title . ' with failed lines indicated</legend>'
+						. $scriptWithFailedLinesIndicated
+						. '</fieldset><br/>';
+					
 					return SetupModule::FAILURE;
 				}
 				$outCompare = $thisDB->generateDiffSQL($dbSchema, $sql);

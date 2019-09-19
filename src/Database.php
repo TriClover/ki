@@ -249,13 +249,24 @@ END_SCRIPT;
 		$missingTables = array();
 		$extraTables = array();
 		$previousLine = '';
-		foreach($outCompare as $key => $line) //remove spurious lines in the script
+		foreach($outCompare as $key => $line) //remove or fix broken lines in the script
 		{
 			$line = preg_replace('/\s+/', ' ', $line);
-			//This is only needed because of a bug in mysqldbcompare; lines like this should be in a comment but aren't.
+			
+			//This is only needed because of a bug in mysqldbcompare - 
+			//lines like this should be in a comment but aren't.
 			if(mb_strpos($line, 'pass SKIP SKIP') !== false)
 			{
 				unset($outCompare[$key]); 
+			}
+			
+			//Fix the bug in mysqldbcompare - https://bugs.mysql.com/bug.php?id=89105
+			//where foreign keys reference the wrong database
+			$tableRef = ' REFERENCES `' . $dbSchema->dbName . '`.`';
+			if(mb_strpos($line, $tableRef) !== false)
+			{
+				$fixedTableRef = ' REFERENCES `' . $this->dbName . '`.`';
+				$outCompare[$key] = str_replace($tableRef, $fixedTableRef, $outCompare[$key]);
 			}
 
 			/* This is only needed because of a missing feature in mysqldbcompare;
@@ -280,7 +291,6 @@ END_SCRIPT;
 				unset($outCompare[$key]);
 				continue; //avoid setting this as the "previous line" since the missing/extra tables are grouped
 			}
-			
 			
 			if    (empty($line)   ) unset($outCompare[$key]); //remove blank lines
 			elseif($line[0] == '#') unset($outCompare[$key]); //remove comments
@@ -308,6 +318,7 @@ END_SCRIPT;
 				return 'table <tt>' . $table . '</tt> not found in the script it came from';
 			}
 		}
+		$outCompare = array_merge($outCompare);
 		ksort($foundTables);
 		foreach($foundTables as $query)
 		{
