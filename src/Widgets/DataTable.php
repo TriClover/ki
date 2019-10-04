@@ -471,7 +471,7 @@ class DataTable extends Form
 					$buttonName = $this->inputId('0', $fqRow, 'delete');
 					$dataRow .= '<div class="ki_button_confirm_container">';
 					$dataRow .= '<button type="button" id="' . $buttonName . '" class="ki_button_del" title="Delete" style="">❌</button>';
-					$dataRow .= '<div class="ki_button_confirm"><input type="submit" name="' . $buttonName . '" value="Confirm Delete" formnovalidate onclick="' . htmlspecialchars($this->eventCallbacks->onclickDelete) . '"/></div>';
+					$dataRow .= '<div class="ki_button_confirm" tabindex="100"><input type="submit" name="' . $buttonName . '" value="Confirm Delete" formnovalidate onclick="' . htmlspecialchars($this->eventCallbacks->onclickDelete) . '"/></div>';
 					$dataRow .= '</div>';
 				}
 				$dataRow .= "\n" . '    </div>';
