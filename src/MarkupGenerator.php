@@ -57,7 +57,7 @@ class MarkupGenerator
  <head itemscope>
   <meta charset="utf-8"/>
   <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="height=device-height, width=device-width, initial-scale=1"/>
   <link rel="shortcut icon" href="$base/favicon.ico"/>
   $includes
   <script>webshims.polyfill('forms forms-ext details geolocation');</script>
