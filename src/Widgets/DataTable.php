@@ -26,6 +26,7 @@ class DataTable extends Form
 	protected $eventCallbacks;   //DataTableEventCallbacks object
 	protected $buttonCallbacks;  //array of CallbackButton objects that get their own buttons in the table for each row. The functions recieve the PK.
 	protected $headerText;       //text always shown at top of table
+	protected $db;               //database connection. Defaults to the framework default DB.
 	
 	//setup, calculated
 	protected $inPrefix;         //prefix of all HTML input names
@@ -69,7 +70,8 @@ class DataTable extends Form
 	                     bool   $show_querysave    = false, //todo
 	    DataTableEventCallbacks $eventCallbacks    = NULL,
 						 array  $buttonCallbacks   = NULL,
-	                     string $headerText        = '')
+	                     string $headerText        = '',
+	                   Database $db                = NULL)
 	{
 		//save parameters
 		$this->title             = preg_replace('/[^A-Za-z0-9_]/','',$title);
@@ -84,6 +86,9 @@ class DataTable extends Form
 		$this->eventCallbacks    = ($eventCallbacks !== NULL) ? $eventCallbacks : new DataTableEventCallbacks(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 		$this->buttonCallbacks   = $buttonCallbacks;
 		$this->headerText        = $headerText;
+		$this->db                = ($db === NULL) ? Database::db() : $db;
+		
+		$db = $this->db;
 		
 		//calculate more setup info
 		$this->inPrefix = 'ki_datatable_' . htmlspecialchars($this->title) . '_';
@@ -97,7 +102,7 @@ class DataTable extends Form
 			{
 				if($key != 0) $joinTables[$key-1] = $value;
 			}
-			$this->joinTables = DataTableJoin::createAll($this->table, $joinTables);
+			$this->joinTables = DataTableJoin::createAll($this->table, $joinTables, $db);
 		}else{
 			$this->table = $table;
 			$table = [$table];
@@ -126,7 +131,6 @@ class DataTable extends Form
 		}
 		
 		//get schema info
-		$db = Database::db();
 		$schemaResult = DataTableField::fillSchemaInfoAll($this);
 		if($schemaResult === false)
 		{
@@ -237,6 +241,11 @@ class DataTable extends Form
 		$this->queryBuilder = new QueryBuilder($this->fields, $this->title, $show_querylist);
 	}
 	
+	public function getDb()
+	{
+		return $this->db;
+	}
+	
 	public function getInPrefix()
 	{
 		return $this->inPrefix;
@@ -261,7 +270,7 @@ class DataTable extends Form
 		}
 
 		//get data
-		$db = Database::db();
+		$db = $this->db;
 		$query = $this->buildQuery(true);
 		$res = $db->query($query, [], 'main data-displaying query for DataTable ' . $this->title);
 		if($res === false) return '';
@@ -750,7 +759,7 @@ END_SQL;
 	protected function handleParamsInternal()
 	{
 		Log::trace('Handling params for DataTable ' . $this->title);
-		$db = Database::db();
+		$db = $this->db;
 		$didSomething = false;
 		
 		//check preconditions
@@ -1119,7 +1128,7 @@ END_SQL;
 					}elseif($this->fields[$col]->manyToMany !== false){
 						$updatedVirtualField = true;
 						
-						$res = $this->fields[$col]->manyToMany->updateData($pk, $value);
+						$res = $this->fields[$col]->manyToMany->updateData($pk, $value, $db);
 						if($res !== true)
 						{
 							$this->outputMessage[] = $res;
@@ -1297,7 +1306,7 @@ END_SQL;
 						
 						foreach($virtuals as $col => $value)
 						{
-							$res = $this->fields[$col]->manyToMany->updateData($pk, $value);
+							$res = $this->fields[$col]->manyToMany->updateData($pk, $value, $db);
 							if($res !== true)
 							{
 								$this->outputMessage[] = $res;

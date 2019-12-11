@@ -161,7 +161,7 @@ class DataTableField
 	
 	static function fillSchemaInfoAll(\mls\ki\Widgets\DataTable &$dt)
 	{
-		$db = Database::db();
+		$db = $dt->getDb();
 		$table = [$dt->table];
 		$tables_alias2real = [$dt->table => $dt->table];
 		foreach($dt->joinTables as $t)

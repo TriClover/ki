@@ -48,9 +48,8 @@ class DataTableJoin
 	* @param joinTable a table to be joined in
 	* @return a DataTableJoin object with the info needed to perform the join, or false if the info could not be found.
 	*/
-	static function create(string $mainTable, string $joinTable)
+	static function create(string $mainTable, string $joinTable, Database $db)
 	{
-		$db = Database::db();
 		$query = <<<'QUERY'
 SELECT 
 	`COLUMN_NAME`,                            /* FK field name in main table */
@@ -108,12 +107,12 @@ QUERY;
 	* @param joinTables all tables to be joined in
 	* @return array of DataTableJoin objects
 	*/
-	static function createAll(string $mainTable, array $joinTables)
+	static function createAll(string $mainTable, array $joinTables, Database $db)
 	{
 		$ret = [];
 		foreach($joinTables as $jt)
 		{
-			$join = DataTableJoin::create($mainTable, $jt);
+			$join = DataTableJoin::create($mainTable, $jt, $db);
 			if($join === false)
 			{
 				Log::error('No DataTable-usable key arrangement found for ' . $mainTable . ' LEFT JOIN ' . $jt);

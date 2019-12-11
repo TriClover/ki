@@ -94,7 +94,7 @@ class DataTableMultiRelation
 		$this->mainTable = $dt->table;
 		$this->mainTablePKField = $dt->pk[0];
 		
-		$db = Database::db();
+		$db = $dt->getDb();
 		$query = 'SHOW COLUMNS FROM `' . $db->esc($this->relatedTable) . '` WHERE `Key`="PRI"';
 		$relatedPK = $db->query($query, [], 'getting PK of related table');
 		if(count($relatedPK) != 1)
@@ -169,12 +169,11 @@ class DataTableMultiRelation
 	* @param relatedTablePKValues the set of related table PK values to be acciated with the given main table PK value
 	* @return true on success, string on failure
 	*/
-	public function updateData($mainTablePKValue, $relatedTablePKValues)
+	public function updateData($mainTablePKValue, $relatedTablePKValues, Database $db)
 	{
 		$pk = $mainTablePKValue;
 		$value = $relatedTablePKValues;
 		
-		$db = Database::db();
 		$out = [];
 		
 		$mainTable                  ='`'.$this->mainTable                  .'`';
