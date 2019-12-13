@@ -602,7 +602,7 @@ class DataTable extends Form
 			$js .= '$("' . $htmlId . '.ki_table input,' . $htmlId . '.ki_table select").on("change keydown keyup blur", function(){';
 			$js .= 'ki_setEditVisibility($(this).parent().parent().find(".ki_button_save"), inputValues);';
 			$js .= '});';
-			$js .= '$("' . $htmlId . '.ki_table select[multiple]").multiselect({selectedList:2,header:false});';
+			$js .= '$("' . $htmlId . '.ki_table select[multiple]").multiselect({selectedList:1,header:false});';
 			
 			$js = str_replace('inputValues',$arrIV,$js);
 			$js .= '</script>';
@@ -1151,7 +1151,17 @@ END_SQL;
 				$conditions[] = $this->filter; //this line only allows editing rows which match the filter
 				$query .= implode(' AND ', $conditions);
 				if(empty($this->joinTables)) $query .= ' LIMIT 1;'; //Safety limit can only be used in single table mode per mysql syntax
-				$res = $db->query($query, [], 'updating row for DataTable ' . $this->title);
+				
+				/*
+					If there was nothing to put in the SET clause,
+					don't attempt to run the UPDATE as it will fail anyway.
+					This situation could happen if only a many-to-many relation is being updated.
+				*/
+				if(!empty($setVals))
+					$res = $db->query($query, [], 'updating row for DataTable ' . $this->title);
+				else
+					$res = 0;
+				
 				if($res === false)
 				{
 					$this->outputMessage[] = 'Failed to update row ' . htmlspecialchars(implode(',',$pk));
