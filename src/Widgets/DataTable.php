@@ -13,7 +13,7 @@ class DataTable extends Form
 {
 	//setup parameters
 	public    $title;            //title for this widget - needed to separate multiple DataTables on the same page
-	public    $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first matching foreign key found (FK in base table connected to PK in other table). If a given table to join is referenced by more than one field it will get joined once for each field, with alias in the form `referencedTable_referencingFieldInMainTable`
+	public    $table;            //name of table to use. If array, will use first as base and the rest will be LEFT JOINed in on the first matching foreign key found (FK in base table connected to PK in other table). If a given table to join is referenced by more than one field it will get joined once for each field, with alias in the form `referencedTable_referencingFieldInMainTable`. Tables other than the first, instead of being a string and joining with key autodetection, can instead be a DataTableJoin object where you manually specify the fields to join on -- just make sure that if you join the same table more than once you supply a unique alias for each one in the DataTableJoin constructor.
 	public    $fields;           //array of DataTableField objects specifying what to do with each field. Fields not specified will get the defaults shown in the DataTableField class. A field with NULL for the name overrides what is used for fields not specified.
 	protected $allow_add;        //true: allow adding rows. false: dont.
 	protected $allow_delete;     //true: allow deleting rows. false: don't. string: allow but set this field=false (table.field) instead of actually deleting

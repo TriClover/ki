@@ -48,8 +48,10 @@ class DataTableJoin
 	* @param joinTable a table to be joined in
 	* @return a DataTableJoin object with the info needed to perform the join, or false if the info could not be found.
 	*/
-	static function create(string $mainTable, string $joinTable, Database $db)
+	static function create(string $mainTable, $joinTable, Database $db)
 	{
+		if($joinTable instanceof DataTableJoin) return [$joinTable];
+		
 		$query = <<<'QUERY'
 SELECT 
 	`COLUMN_NAME`,                            /* FK field name in main table */
