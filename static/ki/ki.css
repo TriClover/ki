@@ -12,6 +12,16 @@ body{
 	cursor:pointer;
 }
 
+.button2flat{
+	display:inline-block;
+	background-color:#F0F0F0;
+	border:none;
+	cursor:pointer;
+	line-height: 2em;
+	font-size:16px;
+	padding:0 .2em 0 .2em;
+}
+
 #ki_environmentIndicator{
 	position:fixed;
 	top:0;
@@ -368,12 +378,11 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 /* QueryBuilder */
 .ki_querybuilder{
 	text-align:left;
-}
-.ki_querybuilder fieldset{
 	float:left;
 }
-.ki_querybuilder fieldset+fieldset+fieldset{
-	padding-right:30px;
+.ki_querybuilder fieldset{
+	width:min-content;
+	white-space:nowrap;
 }
 .ki_querybuilder ol,.ki_querybuilder ul{
 	list-style-type: none;
@@ -381,8 +390,6 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 }
 .ki_querybuilder ol{
 	margin:0;
-	max-height:10em;
-	overflow-y:scroll;
 }
 .ki_querybuilder ul{
 	margin:0 0 0 1em;
@@ -427,6 +434,11 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 .ki_querybuilder ol li select{
 	margin:1px;
 }
+.ki_filter{
+	display:inline-block;
+	vertical-align:top;
+	padding-right:2em;
+}
 .ki_filter button:not(.ui-multiselect){
 	width:auto;
 	font-weight:normal;
@@ -444,6 +456,16 @@ input[type=text],input[type=password],input[type=email],input[type=number],selec
 	margin-left:2px;
 	position:absolute;
 	right:-25px;
+}
+
+.ki_querybuilder form>div>input[type=submit],.ki_querybuilder>form>input{
+	background-color:#0A0;
+	color:#FFF;
+	font-weight:bold;
+}
+
+.ki_querybuilder>form{
+	display:inline;
 }
 
 /* Drawer */

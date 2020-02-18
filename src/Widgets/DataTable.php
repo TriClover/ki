@@ -286,13 +286,23 @@ class DataTable extends Form
 		$out = '';
 		$out .= $this->headerText;
 		$pageInput = '<input type="hidden" name="' . $this->inPrefix . 'page' . '" value="' . $this->page . '"/>';
-		$out .= '<div style="text-align:center;display:inline-block;">';
+		$out .= '<div style="display:inline-block;">';
 		
 		//query builder
 		if($this->show_querybuilder)
 		{
 			$out .= $this->queryBuilder->getHTML();
-			$out .= '<br style="clear:both;"/>';
+		}
+		
+		//Exports
+		if($this->show_exports)
+		{
+			$exportForm = '<h2 style="margin:1em 3em 1em 0.5em;">Download</h2><form method="post">'
+				. '<select name="' . $this->inPrefix . 'format"><option value="CSV">CSV</option><option value="XLSX">Excel</option><option value="ODS">OpenOffice</option></select> '
+				. '<input type="submit" name="' . $this->inPrefix . 'export" value="⤓" style="font-size:120%;border:0;width:20px;height:20px;font-weight:bold;padding:0;vertical-align:bottom;position:relative;top:2px;" title="Export"/>'
+				. '</form>';
+			$exportDrawer = new Drawer($this->inPrefix . 'exportDrawer', $exportForm, Drawer::EDGE_RIGHT, Drawer::DEFAULT_BUTTON . ' Download');
+			$out .= ' &nbsp;' . $exportDrawer->getHTML();
 		}
 
 		//feedback on previous submit
@@ -303,20 +313,9 @@ class DataTable extends Form
 			$outMsgStr .= '<ul>';
 			foreach($this->outputMessage as $retmsg) $outMsgStr .= '<li>' . $retmsg . '</li>';
 			$outMsgStr .= '</ul>';
-		}else{
-			if($this->show_exports) $outMsgStr .= '&nbsp;';
 		}
 		$outMsgStr .= '</div>';
 		$out .= $outMsgStr;
-		
-		//Exports
-		if($this->show_exports)
-		{
-			$out .= '<form style="float:right;margin-top:-1em;" method="post">'
-				. '<select name="' . $this->inPrefix . '_format"><option value="CSV">CSV</option><option value="XLSX">Excel</option><option value="ODS">OpenOffice</option></select> '
-				. '<input type="submit" name="' . $this->inPrefix . '_export" value="⤓" style="font-size:120%;border:0;width:20px;height:20px;font-weight:bold;padding:0;vertical-align:bottom;position:relative;top:2px;" title="Export"/>'
-				. '&nbsp; </form>';
-		}
 		
 		//rows to display and/or edit
 		$out .= "\n" . '  <div class="ki_table" id="' . $this->title . '">';
@@ -783,14 +782,14 @@ END_SQL;
 			if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
 			//Export immediately triggers output and halt
 			if($this->show_exports
-				&& isset($post[$this->inPrefix.'_export'])
-				&& method_exists('\mls\ki\Exporter',$post[$this->inPrefix.'_format']))
+				&& isset($post[$this->inPrefix.'export'])
+				&& method_exists('\mls\ki\Exporter',$post[$this->inPrefix.'format']))
 			{
 				$extension = '';
 				$query = $this->buildQuery(false);
 				$data = $db->query($query, [], 'getting data for export by DataTable');
 				if(!empty($data)) array_unshift($data, array_keys($data[0]));
-				switch($post[$this->inPrefix.'_format'])
+				switch($post[$this->inPrefix.'format'])
 				{
 					case 'CSV':
 					$data = Exporter::CSV($data, true);

@@ -562,12 +562,12 @@ function ki_queryBuilderSerialize(form, prefix)
 function ki_queryBuilderSerializerGather(form, prefix)
 {
 	var show = [];
-	form.children('.ki_showOrder').find('input:checked').each(function(){
+	form.find('.ki_showOrder').find('input:checked').each(function(){
 		show.push($(this).val());
 	});
 	
 	var sort = [];
-	form.children('.ki_sorter').find('select').each(function(){
+	form.find('.ki_sorter').find('select').each(function(){
 		var val = $(this).val();
 		if(val != 'N')
 		{

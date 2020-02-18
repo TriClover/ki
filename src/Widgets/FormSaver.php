@@ -95,7 +95,8 @@ class FormSaver extends Form
 			return $contents;
 		};
 		$loadCB = [$this, 'load'];
-		$buttonCallbacks = ['Load'=>$loadCB];
+		$cbObj = new CallbackButton('Load', $loadCB);
+		$buttonCallbacks = [$cbObj];
 		$onclick = 'ki_formsaver_deliverSerialization(this, "' . $this->serializer . '", "' . $this->formName . '");return true;';
 		$eventCallbacks = new DataTableEventCallbacks($loadCB,NULL,NULL,NULL,NULL,NULL,$onclick,$onclick,$onclick);
 		
@@ -176,9 +177,7 @@ class FormSaver extends Form
 			. '","' . $this->outputFormData . '");});</script></div>';
 		
 		$drawer = new Drawer($drawerName, $reportList, Drawer::EDGE_RIGHT, '☰ Reports', $this->dataTablesDidSomething);
-		$out = '<fieldset style="float:left;text-align:center;">'
-			. $drawer->getHTML()
-			. '</fieldset>';
+		$out = $drawer->getHTML();
 		
 		return $out;
 	}

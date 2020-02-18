@@ -71,33 +71,48 @@ class QueryBuilder extends Form
 		$saver = '';
 		if($this->saver != NULL)
 		{
-			$saver = '<div style="float:right;">' . $this->saver->getHTML() . '</div>';
+			$saver = $this->saver->getHTML();
 		}
 		
-		$out = '<div class="ki_querybuilder" id="' . $this->inPrefix . '">' . $saver;
+		$out = '<div class="ki_querybuilder" id="' . $this->inPrefix . '">';
+		
+		//apply button
+		$out .= '<form method="get" onsubmit="ki_queryBuilderSerialize($(\'#' . $this->inPrefix . '\'), \'' . $this->inPrefix . '\');">';
+		$out .= '<input type="submit" value="✓ Apply" class="button2flat" />';
+		$out .= '<input type="hidden" name="' . $this->inPrefix . '_filterResult" id="' . $this->inPrefix . '_filterResult" value="' . htmlspecialchars($this->previousResultJSON) . '"/>';
+		$out .= '</form>&nbsp;';
+
+		//conditions
+		$condHtml = '<br/><br/><br/><fieldset class="ki_filter"><legend>Filter</legend><div id="' . $this->inPrefix . '_filter"></div></fieldset>';
+		$condDrawer = new Drawer($this->inPrefix.'_conditions', $condHtml, Drawer::EDGE_LEFT, Drawer::DEFAULT_BUTTON.' Filter');
+		$out .= $condDrawer->getHTML() . ' ';
+		
 		//field list
-		$out .= '<fieldset class="ki_showOrder"><legend>Show Fields</legend><ol>';
+		$fieldlistName = $this->inPrefix . '_showFields';
+		$fieldlistForm = '<div class="ki_showOrder"><h2>Show Fields</h2><ol>';
 		foreach($this->previousResult->fieldsToShow as $alias)
 		{
 			if(!in_array($alias, $this->aliases)) continue;
-			$out .= '<li><label><input type="checkbox" value="' . htmlspecialchars($alias)
+			$fieldlistForm .= '<li><label><input type="checkbox" value="' . htmlspecialchars($alias)
 				. '" checked />' . htmlspecialchars($alias) . '</label></li>';
 		}
 		foreach($this->aliases as $alias)
 		{
 			if(in_array($alias, $this->previousResult->fieldsToShow)) continue;
-			$out .= '<li><label><input type="checkbox" value="' . htmlspecialchars($alias) . '" '
+			$fieldlistForm .= '<li><label><input type="checkbox" value="' . htmlspecialchars($alias) . '" '
 				. (empty($this->previousResult->fieldsToShow) ? 'checked' : '')
 				. ' />' . htmlspecialchars($alias) . '</label></li>';
 		}
-		$out .= '</ol></fieldset>';
+		$fieldlistForm .= '</ol></div>';
+		$fieldlistDrawer = new Drawer($this->inPrefix . '_fieldlistDrawer', $fieldlistForm, Drawer::EDGE_LEFT, Drawer::DEFAULT_BUTTON . ' Show Fields');
+		
 		//sorter
 		$sortName = $this->inPrefix . '_sort';
-		$out .= '<fieldset class="ki_sorter"><legend>Sort</legend><ol>';
+		$sortForm = '<div class="ki_sorter"><h2>&nbsp;Sort</h2><ol>';
 		foreach($this->previousResult->sortOrder as $alias => $direction)
 		{
 			if(!in_array($alias, $this->aliases)) continue;
-			$out .= '<li><label><select name="' . htmlspecialchars($alias) . '">'
+			$sortForm .= '<li><label><select name="' . htmlspecialchars($alias) . '">'
 				. '<option value="N"' . ($direction == 'N' ? ' selected' : '') . '>&nbsp;</option>'
 				. '<option value="A"' . ($direction == 'A' ? ' selected' : '') . '>▲</option>'
 				. '<option value="D"' . ($direction == 'D' ? ' selected' : '') . '>▼</option>'
@@ -106,18 +121,21 @@ class QueryBuilder extends Form
 		foreach($this->aliases as $alias)
 		{
 			if(in_array($alias, array_keys($this->previousResult->sortOrder))) continue;
-			$out .= '<li><label><select name="' . htmlspecialchars($alias) . '">'
+			$sortForm .= '<li><label><select name="' . htmlspecialchars($alias) . '">'
 				. '<option value="N">&nbsp;</option><option value="A">▲</option><option value="D">▼</option></select>'
 				. htmlspecialchars($alias) . '</label></li>';
 		}
-		$out .= '</ol></fieldset>';
-		//conditions
-		$out .= '<fieldset class="ki_filter"><legend>Filter</legend><div id="' . $this->inPrefix . '_filter"></div></fieldset>';
+		$sortForm .= '</ol></div>';
+		$sortDrawer = new Drawer($this->inPrefix . '_sortDrawer', $sortForm, Drawer::EDGE_LEFT, Drawer::DEFAULT_BUTTON . ' Sort');
+
+		$out .=  $fieldlistDrawer->getHTML() . ' ' . $sortDrawer->getHTML();
+		
+		//saver
+		$out .= ' | ' . $saver;
+		
 		//closing
-		$out .= '<form method="get" onsubmit="ki_queryBuilderSerialize($(\'#' . $this->inPrefix . '\'), \'' . $this->inPrefix . '\');">';
-		$out .= '<br style="clear:both;"/><input type="submit" value="Apply" />';
-		$out .= '<input type="hidden" name="' . $this->inPrefix . '_filterResult" id="' . $this->inPrefix . '_filterResult" value="' . htmlspecialchars($this->previousResultJSON) . '"/>';
-		$out .= '</form></div>';
+		$out .= '</div>';
+		
 		//script kickoff
 		$out .= '<script>var ki_querybuilder_fields = ki_querybuilder_fields || new Object();';
 		$fieldsJson = [];
