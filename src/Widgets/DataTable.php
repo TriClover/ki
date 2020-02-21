@@ -286,7 +286,7 @@ class DataTable extends Form
 		$out = '';
 		$out .= $this->headerText;
 		$pageInput = '<input type="hidden" name="' . $this->inPrefix . 'page' . '" value="' . $this->page . '"/>';
-		$out .= '<div style="display:inline-block;">';
+		$out .= '<div class="ki_datatable">';
 		
 		//query builder
 		if($this->show_querybuilder)
