@@ -159,6 +159,7 @@ CREATE TABLE `ki_savedFormCategories` (
   `permission_edit` int(11) NOT NULL COMMENT 'Reference to the permission allowing (viewing,editing) of the reports in this category.',
   `permission_addDel` int(11) NOT NULL COMMENT 'Reference to the permission allowing (viewing,editing,adding,deleting) of the reports in this category.',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uni_name` (`name`),
   KEY `fk_formcat_permView_idx` (`permission_view`),
   KEY `fk_formcat_permEdit_idx` (`permission_edit`),
   KEY `fk_formcat_permAddDel_idx` (`permission_addDel`),

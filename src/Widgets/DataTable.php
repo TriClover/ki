@@ -1279,8 +1279,8 @@ END_SQL;
 							}else{
 								$setterVal = $searchRes[0]['keyVal'];
 							}
-							//$setter = '`' . $setterField . '`=' . $setterVal;
-							//$setters[] = $setter;
+							$setter = '`' . $setterField . '`=' . $setterVal;
+							$setters[] = $setter;
 						}else{
 							$setter = '`' . $tablename . '`.`' . $colname . '`=';
 							if($value === NULL)
