@@ -152,8 +152,7 @@ class LoginForm extends Form
 
 			//Only failure paths will result in a mail being sent but we can set one up here to avoid repetition
 			$mail = new PHPMailer;
-			$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
-			$mail->FromName = $site . ' Account Management';
+			$mail->SetFrom('noreply@'.$_SERVER['SERVER_NAME'], $site.' Account Management');
 			$mail->addAddress($email);
 
 			/* Check for duplicate username

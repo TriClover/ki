@@ -93,8 +93,7 @@ class Log
 						$mail->Body = $dt . ' [' . $levelName . "]\n" . $out . "\nURL: " . $url . "\nUser: " . $user . "\n";
 					}
 					
-					$mail->From = $from;
-					$mail->FromName = $site . ' Log Mailer';
+					$mail->SetFrom($from, $site.' Log Mailer');
 					$mail->addAddress($dest->address);
 					$mail->Subject = $site . ' Log [' . $levelName . ']';
 					Mail::send($mail);

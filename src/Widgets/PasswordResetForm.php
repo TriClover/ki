@@ -61,8 +61,7 @@ class PasswordResetForm extends Form
 			$site = Config::get()['general']['sitename'];
 			$from = 'noreply@' . $_SERVER['SERVER_NAME'];
 			$mail = new PHPMailer;
-			$mail->From = $from;
-			$mail->FromName = $site . ' Account Maintenance';
+			$mail->SetFrom($from, $site.' Account Maintenance');
 			$mail->addAddress($post['email']);
 			
 			if(isset($post['username'])) //password reset

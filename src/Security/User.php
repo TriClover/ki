@@ -96,8 +96,7 @@ class User
 			$site = Config::get()['general']['sitename'];
 			$nonce = Nonce::create('email_verify', $this->id, false, false, $m->id);
 			$mail = new PHPMailer();
-			$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
-			$mail->FromName = $site . ' Account Management';
+			$mail->SetFrom('noreply@'.$_SERVER['SERVER_NAME'], $site.' Account Management');
 			$mail->addAddress($m->emailAddress);
 			$mail->Subject = $site . ' Email Verification';
 			$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
@@ -118,8 +117,7 @@ class User
 		$site = Config::get()['general']['sitename'];
 		$nonce = Nonce::create('email_verify', $this->id, false, false, $address->id);
 		$mail = new PHPMailer();
-		$mail->From = 'noreply@' . $_SERVER['SERVER_NAME'];
-		$mail->FromName = $site . ' Account Management';
+		$mail->SetFrom('noreply@'.$_SERVER['SERVER_NAME'], $site.' Account Management');
 		$mail->addAddress($address->emailAddress);
 		$mail->Subject = $site . ' Login From New Location';
 		$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
