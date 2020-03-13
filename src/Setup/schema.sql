@@ -88,7 +88,7 @@ CREATE TABLE `ki_groupsOfUser` (
   `group` int(11) NOT NULL,
   UNIQUE KEY `groupsOfUser_uc` (`user`,`group`),
   KEY `gou_group_groups_id_idx` (`group`),
-  CONSTRAINT `gou_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `gou_group_groups_id` FOREIGN KEY (`group`) REFERENCES `ki_groups` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `gou_user_users_id` FOREIGN KEY (`user`) REFERENCES `ki_users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
