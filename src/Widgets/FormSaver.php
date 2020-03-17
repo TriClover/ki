@@ -54,7 +54,7 @@ class FormSaver extends Form
 		}
 		
 		$db = Database::db();
-		$idRes = $db->query('SELECT `id` FROM `ki_savableForms` WHERE `name`=?', [$formName], 'getting ID of form');
+		$idRes = $db->query('SELECT `id` FROM `ki_savableForms` WHERE `name`=?', [$this->formName], 'getting ID of form');
 		if($idRes === false)
 		{
 			$this->setupOK = false;
@@ -62,13 +62,13 @@ class FormSaver extends Form
 		}
 		if(count($idRes) == 0)
 		{
-			$insertRes = $db->query('INSERT INTO `ki_savableForms` SET `name`=?', [$formName], 'adding new savable form');
+			$insertRes = $db->query('INSERT INTO `ki_savableForms` SET `name`=?', [$this->formName], 'adding new savable form');
 			if($insertRes === false)
 			{
 				$this->setupOK = false;
 				return;
 			}
-			$this->dbId = $insertRes->connection->insert_id;
+			$this->dbId = $db->connection->insert_id;
 		}else{
 			$this->dbId = $idRes[0]['id'];
 		}
@@ -77,7 +77,7 @@ class FormSaver extends Form
 		$formId = $this->dbId;
 		$dataConstraints = ['type' => 'hidden'];
 		$userId = Authenticator::$user->id;
-		$saverName = 'saver_'.$formName;
+		$saverName = 'saver_'.$this->formName;
 		
 		//format the DataTable cells for the Data column
 		$dtFilter_data = function($contents, $type, &$row) use($saverName)
@@ -111,7 +111,7 @@ class FormSaver extends Form
 		$saverFields[] = new DataTableField('lastEdited_on',$table,'Last Edited On',false,false,false,  [], NULL);
 		$saverFields[] = new DataTableField('owner',        $table,'Owner',         false,false,$userId,[], NULL);
 		$saverFields[] = new DataTableField('category',     $table,'Category',      false,false,NULL,   [], NULL);
-		$filter = '`owner`=' . $userId . ' AND `category` IS NULL';
+		$filter = '`owner`=' . $userId . ' AND `category` IS NULL AND `form` IN(SELECT `id` FROM `ki_savableForms` WHERE `name`="' . $this->formName . '")';
 		$this->dtSaver = new DataTable($saverName, $table, $saverFields, true, true, $filter, 1000, false, false, false, false, $eventCallbacks, $buttonCallbacks);
 		
 		$categoriesQuery = 'SELECT `id`,`name`,`permission_view`,`permission_edit`,`permission_addDel` FROM `ki_savedFormCategories`';
@@ -139,7 +139,7 @@ class FormSaver extends Form
 				$catSaverFields[] = new DataTableField('lastEdited_on',$table,'Last Edited On',false,false,     false,  [], NULL);
 				$catSaverFields[] = new DataTableField('owner',        $table,'Owner',         false,false,     $userId,[], NULL);
 				$catSaverFields[] = new DataTableField('category',     $table,'Category',      false,false,     $catId, [], NULL);
-				$filter = '`category`=' . $catId;
+				$filter = '`category`=' . $catId . ' AND `form` IN(SELECT `id` FROM `ki_savableForms` WHERE `name`="' . $this->formName . '")';
 				$catSaver = new DataTable($catSaverName, $table, $catSaverFields, $allowAddDel, $allowAddDel, $filter, 1000, false, false, false, false, $eventCallbacks, $buttonCallbacks);
 				$this->categorySavers[$row['name']] = $catSaver;
 			}
