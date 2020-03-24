@@ -780,41 +780,6 @@ END_SQL;
 		if($shouldCheckPost)
 		{
 			if(isset($post[$this->inPrefix . 'page'])) $this->page = (int)$post[$this->inPrefix . 'page'];
-			//Export immediately triggers output and halt
-			if($this->show_exports
-				&& isset($post[$this->inPrefix.'export'])
-				&& method_exists('\mls\ki\Exporter',$post[$this->inPrefix.'format']))
-			{
-				$extension = '';
-				$query = $this->buildQuery(false);
-				$data = $db->query($query, [], 'getting data for export by DataTable');
-				if(!empty($data)) array_unshift($data, array_keys($data[0]));
-				switch($post[$this->inPrefix.'format'])
-				{
-					case 'CSV':
-					$data = Exporter::CSV($data, true);
-					$extension = 'csv';
-					break;
-					
-					case 'XLSX':
-					$data = Exporter::XLSX($data);
-					$extension = 'xlsx';
-					break;
-					
-					case 'ODS':
-					$data = Exporter::ODS($data);
-					$extension = 'ods';
-					break;
-				}
-				if(!empty($extension))
-				{
-					header('Content-Type: application/octet-stream');
-					header('Content-Transfer-Encoding: Binary');
-					header('Content-disposition: attachment; filename="' . $this->table . '.' . $extension . '"');
-					echo $data;
-					exit;
-				}
-			}
 			
 			//interpret and verify edits to save
 			$editPrefix = $this->inPrefix . 'edit_';
@@ -1362,6 +1327,42 @@ END_SQL;
 					}
 				}
 				$this->fields = $newFields;
+			}
+		}
+		
+		//Export immediately triggers output and halt
+		if($this->show_exports
+			&& isset($post[$this->inPrefix.'export'])
+			&& method_exists('\mls\ki\Exporter',$post[$this->inPrefix.'format']))
+		{
+			$extension = '';
+			$query = $this->buildQuery(false);
+			$data = $db->query($query, [], 'getting data for export by DataTable');
+			if(!empty($data)) array_unshift($data, array_keys($data[0]));
+			switch($post[$this->inPrefix.'format'])
+			{
+				case 'CSV':
+				$data = Exporter::CSV($data, true);
+				$extension = 'csv';
+				break;
+				
+				case 'XLSX':
+				$data = Exporter::XLSX($data);
+				$extension = 'xlsx';
+				break;
+				
+				case 'ODS':
+				$data = Exporter::ODS($data);
+				$extension = 'ods';
+				break;
+			}
+			if(!empty($extension))
+			{
+				header('Content-Type: application/octet-stream');
+				header('Content-Transfer-Encoding: Binary');
+				header('Content-disposition: attachment; filename="' . $this->table . '.' . $extension . '"');
+				echo $data;
+				exit;
 			}
 		}
 		
