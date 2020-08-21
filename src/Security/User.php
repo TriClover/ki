@@ -121,8 +121,8 @@ class User
 		$mail->addAddress($address->emailAddress);
 		$mail->Subject = $site . ' Login From New Location';
 		$link = Util::getUrl() . '?ki_spn_ec=' . $nonce->nonceValue;
-		$mail->Body    = 'We detected that you attempted to log in from a new location/device ' . $requestContext->ipAddress . '. Click the following link to allow logging in from your current location/device.<br/><b>This only enables login for your CURRENT location/device where you are clicking the link, not anywhere else!</b><br/>If the login attempt was not made by you, you should change your password.' . "\n" . $link;
-		$mail->AltBody = 'We detected that you attempted to log in from a new location/device ' . $requestContext->ipAddress . '. Click the following link to allow logging in from your current location/device.        This only enables login for your CURRENT location/device where you are clicking the link, not anywhere else!         If the login attempt was not made by you, you should change your password.' . "\n" . $link;
+		$mail->Body    = 'It looks like you are logging in from a new location/device ' . $requestContext->ipAddress . '. Click the following link to allow logging in from your current location/device.<br/><a href="' . $link . '">' . $link . '</a><br/><br/><b>This only enables login for your CURRENT location/device where you are clicking the link, not anywhere else!</b> <br/>If this login attempt was not made by you, you should change your password.';
+		$mail->AltBody = 'It looks like you are logging in from a new location/device ' . $requestContext->ipAddress . '. Click the following link to allow logging in from your current location/device.' . "\n"        . $link                        . "\n\n" . 'This only enables login for your CURRENT location/device where you are clicking the link, not anywhere else!' ."\n". 'If this login attempt was not made by you, you should change your password.';
 		Mail::send($mail);
 	}
 
