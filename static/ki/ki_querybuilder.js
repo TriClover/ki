@@ -245,6 +245,7 @@ function ki_queryBuilderGenerateOperatorOptions(alias, prefix, selected)
 {
 	if(typeof(selected) === 'undefined') selected = '';
 	var type = ki_querybuilder_fields[prefix][alias]['dataType'];
+	const joined = ki_querybuilder_fields[prefix][alias]['joined'];
 	var nullable = ki_querybuilder_fields[prefix][alias]['nullable'] == 'YES';
 
 	var ops = [];
@@ -260,7 +261,11 @@ function ki_queryBuilderGenerateOperatorOptions(alias, prefix, selected)
 	}else{
 		ops = ['=','!=','<','<=','>','>=','contains','does not contain','contained in','not contained in','matches regex',"doesn't match regex"];
 	}
-	if(nullable && (type.indexOf('virtual') == -1))
+	/* There are 2 situations we allow matching for NULL / NOT NULL
+	- Nullable fields. (Only when field is included directly and not as a many-to-many arrangement)
+	- Any field from a JOINed-in table. They will be NULL when the row doesn't have a match in the join, even if the field is defined non-nullable.
+	*/
+	if((nullable && (type.indexOf('virtual') == -1)) || joined)
 	{
 		ops.push('is NULL');
 		ops.push('is NOT NULL');

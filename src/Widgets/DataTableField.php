@@ -38,6 +38,7 @@ class DataTableField
 	public $numOptions = NULL;
 	public $dropdownLimit = NULL;
 	public $dropdownOptions = [];
+	public $joined = NULL;  //true if this field is from a "joined table" as opposed to the main one
 	
 	//State
 	public $filled = false;
@@ -122,6 +123,8 @@ class DataTableField
 	*/
 	function fillSchemaInfo(\mls\ki\Widgets\DataTable &$dt, array $row)
 	{
+		$this->joined = $this->table != $dt->table;
+		
 		//Don't allow editing on fields critical to a join. It can work, but with a result that would be very confusing to the user.
 		foreach($dt->joinTables as $join)
 		{
